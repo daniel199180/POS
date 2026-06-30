@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Eye,
   QrCode,
   ReceiptText,
   Search,
@@ -49,6 +50,14 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
+function getItemCount(items = []) {
+  return items.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
+}
+
+function isCustomItem(item) {
+  return item.productSku === "CUSTOM" || item.productId?.startsWith("custom-");
+}
+
 function buildParams(filters) {
   const params = new URLSearchParams();
 
@@ -75,6 +84,7 @@ export default function SalesClient({
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [selectedSale, setSelectedSale] = useState(null);
 
   const totalPages = useMemo(
     () => Math.max(Math.ceil(total / Number(filters.pageSize || 25)), 1),
@@ -96,6 +106,9 @@ export default function SalesClient({
     try {
       const response = await fetch(
         `/api/pos/sales?${buildParams(nextFilters)}`,
+        {
+          credentials: "same-origin",
+        },
       );
       const payload = await response.json();
 
@@ -104,6 +117,11 @@ export default function SalesClient({
       }
 
       setSales(payload.sales);
+      setSelectedSale((current) =>
+        current
+          ? payload.sales.find((sale) => sale.id === current.id) || current
+          : null,
+      );
       setSummary(payload.summary);
       setTotal(payload.total);
       setPage(payload.page);
@@ -154,6 +172,7 @@ export default function SalesClient({
     try {
       const response = await fetch(`/api/pos/sales/${sale.id}/cancel`, {
         method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ reason }),
       });
@@ -350,8 +369,8 @@ export default function SalesClient({
 
       <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
         <div className="overflow-x-auto">
-          <div className="min-w-[1180px]">
-            <div className="grid grid-cols-[150px_150px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)_130px_120px_120px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
+          <div className="min-w-[1280px]">
+            <div className="grid grid-cols-[150px_150px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)_130px_120px_120px_210px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
               <span>Orden</span>
               <span>Fecha</span>
               <span>Sucursal</span>
@@ -367,7 +386,7 @@ export default function SalesClient({
               {sales.map((sale) => (
                 <div
                   key={sale.id}
-                  className="grid grid-cols-[150px_150px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)_130px_120px_120px_120px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
+                  className="grid grid-cols-[150px_150px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)_130px_120px_120px_210px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
                 >
                   <span className="font-medium text-neutral-100">
                     {sale.saleNumber}
@@ -397,7 +416,15 @@ export default function SalesClient({
                   >
                     {statusLabels[sale.status] || sale.status}
                   </span>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSale(sale)}
+                      className="inline-flex h-9 items-center gap-2 rounded-md border border-neutral-700 px-3 text-sm text-neutral-300 transition hover:border-neutral-400 hover:text-white"
+                    >
+                      <Eye className="size-4" />
+                      Detalle
+                    </button>
                     {canCancel && sale.status === "completed" ? (
                       <button
                         type="button"
@@ -408,9 +435,7 @@ export default function SalesClient({
                         <Ban className="size-4" />
                         Anular
                       </button>
-                    ) : (
-                      <span className="text-xs text-neutral-600">-</span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -456,6 +481,197 @@ export default function SalesClient({
           </div>
         </div>
       </div>
+
+      {selectedSale ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6">
+          <div className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-neutral-800 px-5 py-4">
+              <div className="min-w-0">
+                <p className="text-xs font-medium tracking-[0.16em] text-neutral-500 uppercase">
+                  Detalle de venta
+                </p>
+                <h2 className="mt-1 truncate text-xl font-semibold text-neutral-100">
+                  {selectedSale.saleNumber}
+                </h2>
+                <p className="mt-1 text-sm text-neutral-500">
+                  {formatDateTime(selectedSale.completedAt)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSale(null)}
+                className="grid size-9 shrink-0 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-white"
+                aria-label="Cerrar detalle"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Sucursal
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-neutral-100">
+                    {selectedSale.branchName || "-"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Cajero
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-neutral-100">
+                    {selectedSale.cashierName || "-"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Pago
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-neutral-100">
+                    {selectedSale.paymentMethodLabel ||
+                      paymentLabels[selectedSale.paymentMethodType] ||
+                      "-"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Estado
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-100">
+                    {statusLabels[selectedSale.status] || selectedSale.status}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Items
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-100">
+                    {getItemCount(selectedSale.items)} unidades
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Recibido
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-100">
+                    {money(selectedSale.amountPaid)}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Cambio
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-100">
+                    {money(selectedSale.change)}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Pagador
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-neutral-100">
+                    {selectedSale.senderName || "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-md border border-neutral-800">
+                <div className="overflow-x-auto">
+                  <div className="min-w-[670px]">
+                    <div className="grid grid-cols-[minmax(220px,1fr)_120px_90px_120px_120px] border-b border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
+                      <span>Producto</span>
+                      <span>SKU</span>
+                      <span>Cant.</span>
+                      <span>Precio</span>
+                      <span className="text-right">Subtotal</span>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      {(selectedSale.items || []).map((item) => (
+                        <div
+                          key={item.id}
+                          className="grid grid-cols-[minmax(220px,1fr)_120px_90px_120px_120px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-neutral-100">
+                              {item.productName}
+                            </p>
+                            {isCustomItem(item) ? (
+                              <p className="mt-1 text-xs text-cyan-300">
+                                Cobro personalizado
+                              </p>
+                            ) : null}
+                          </div>
+                          <span className="truncate text-neutral-400">
+                            {item.productSku}
+                          </span>
+                          <span className="text-neutral-300">
+                            {item.quantity}
+                          </span>
+                          <span className="text-neutral-300">
+                            {money(item.unitPrice)}
+                          </span>
+                          <span className="text-right font-semibold text-neutral-100">
+                            {money(item.subtotal)}
+                          </span>
+                        </div>
+                      ))}
+
+                      {!selectedSale.items ||
+                      selectedSale.items.length === 0 ? (
+                        <div className="px-4 py-10 text-center text-sm text-neutral-500">
+                          Esta venta no tiene items registrados.
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-[1fr_320px]">
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Notas
+                  </p>
+                  <p className="mt-2 text-sm whitespace-pre-wrap text-neutral-300">
+                    {selectedSale.notes || "-"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-neutral-300">
+                      <span>Subtotal</span>
+                      <span>{money(selectedSale.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-300">
+                      <span>Descuento</span>
+                      <span>{money(selectedSale.discount)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-neutral-800 pt-2 text-lg font-semibold text-neutral-100">
+                      <span>Total</span>
+                      <span>{money(selectedSale.total)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-neutral-800 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setSelectedSale(null)}
+                className="h-10 rounded-md bg-neutral-100 px-4 text-sm font-semibold text-neutral-950 transition hover:bg-white"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

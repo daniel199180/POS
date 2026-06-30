@@ -5,6 +5,7 @@ import {
   Banknote,
   CircleCheck,
   CreditCard,
+  Download,
   ExternalLink,
   Loader2,
   Monitor,
@@ -26,6 +27,27 @@ import {
 } from "@/lib/pos/customer-display";
 
 const PRODUCT_PAGE_SIZE = 20;
+const SALE_SUCCESS_RESET_DELAY_MS = 1800;
+const CUSTOM_CHARGE_SKU = "CUSTOM";
+const emptyDailyIncome = {
+  date: "",
+  generatedAt: "",
+  salesCount: 0,
+  totalRecords: 0,
+  isLimited: false,
+  summary: {
+    total: 0,
+    count: 0,
+    averageTicket: 0,
+    cancelledCount: 0,
+    cancelledTotal: 0,
+    paymentTotals: {
+      cash: 0,
+      qr: 0,
+      card: 0,
+    },
+  },
+};
 
 const paymentIcons = {
   cash: Banknote,
@@ -56,6 +78,22 @@ function money(value) {
     style: "currency",
     currency: "BOB",
   }).format(value || 0);
+}
+
+function formatReportDate(value = "") {
+  const [year, month, day] = value.split("-");
+
+  if (!year || !month || !day) {
+    return value || "Hoy";
+  }
+
+  return `${day}/${month}/${year}`;
+}
+
+function getDownloadFilename(disposition = "") {
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+
+  return match?.[1] || "ingresos-del-dia.pdf";
 }
 
 function getQrImageSrc(value = "") {
@@ -134,11 +172,18 @@ function buildCompletedSaleSnapshot({
   };
 }
 
-export default function DashboardClient({ user, catalog, catalogError = "" }) {
+export default function DashboardClient({
+  user,
+  catalog,
+  catalogError = "",
+  settings = { logo: null },
+}) {
   const requestIdRef = useRef(0);
+  const dailyIncomeRequestIdRef = useRef(0);
   const qrCheckInFlightRef = useRef(false);
   const qrAutoRegisterInFlightRef = useRef(false);
   const qrPaymentRef = useRef(null);
+  const qrAutoGenerateKeyRef = useRef("");
   const qrWarmupKeysRef = useRef(new Set());
   const saleResetTimerRef = useRef(null);
   const customerDisplayChannelRef = useRef(null);
@@ -149,6 +194,9 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
     catalog.branches[0]?.id || "",
   );
   const [searchTerm, setSearchTerm] = useState("");
+  const [customChargeName, setCustomChargeName] = useState("");
+  const [customChargePrice, setCustomChargePrice] = useState("");
+  const [customChargeError, setCustomChargeError] = useState("");
   const [cart, setCart] = useState([]);
   const [selectedPaymentId, setSelectedPaymentId] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
@@ -171,6 +219,14 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
   );
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [productsError, setProductsError] = useState("");
+  const [hasQrLogoImageError, setHasQrLogoImageError] = useState(false);
+  const [dailyIncome, setDailyIncome] = useState(emptyDailyIncome);
+  const [isLoadingDailyIncome, setIsLoadingDailyIncome] = useState(false);
+  const [isDownloadingDailyIncome, setIsDownloadingDailyIncome] =
+    useState(false);
+  const [dailyIncomeError, setDailyIncomeError] = useState("");
+  const logoUrl = settings?.logo?.url || "";
+  const qrLogoUrl = logoUrl && !hasQrLogoImageError ? logoUrl : "";
 
   const selectedBranch = useMemo(
     () =>
@@ -271,6 +327,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
           ? {
               qrId: qrPayment.qrId,
               qrImage: qrPayment.qrImage,
+              logoUrl: qrLogoUrl,
               amount: qrPayment.amount,
               status: qrPayment.status,
               transactionId: qrPayment.transactionId,
@@ -295,6 +352,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
       isCheckingQr,
       isGeneratingQr,
       lastCompletedSale,
+      qrLogoUrl,
       qrPayment,
       saleError,
       saleMessage,
@@ -340,6 +398,10 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
       setDisplaySessionId(sessionId);
     }
   }, [displaySessionId]);
+
+  useEffect(() => {
+    setHasQrLogoImageError(false);
+  }, [logoUrl]);
 
   useEffect(() => {
     customerDisplaySnapshotRef.current = customerDisplaySnapshot;
@@ -433,6 +495,46 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
   }, [cartSignature, selectedPaymentId]);
 
   useEffect(() => {
+    if (
+      !isBanecoQrPayment ||
+      cart.length === 0 ||
+      qrPayment ||
+      lastCompletedSale ||
+      isGeneratingQr ||
+      isCheckingQr ||
+      isCharging
+    ) {
+      return;
+    }
+
+    const autoGenerateKey = [
+      selectedBranchId,
+      selectedPayment?.id || "",
+      cartSignature,
+      totals.total,
+    ].join(":");
+
+    if (qrAutoGenerateKeyRef.current === autoGenerateKey) {
+      return;
+    }
+
+    qrAutoGenerateKeyRef.current = autoGenerateKey;
+    generateQrPayment();
+  }, [
+    cart.length,
+    cartSignature,
+    isBanecoQrPayment,
+    isCharging,
+    isCheckingQr,
+    isGeneratingQr,
+    lastCompletedSale,
+    qrPayment,
+    selectedBranchId,
+    selectedPayment?.id,
+    totals.total,
+  ]);
+
+  useEffect(() => {
     if (!selectedBranchId) {
       return;
     }
@@ -490,33 +592,8 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
   }, [selectedBranchId, searchTerm]);
 
   useEffect(() => {
-    if (
-      !isBanecoQrPayment ||
-      !qrPayment ||
-      qrPayment.status !== "pending" ||
-      isCharging
-    ) {
-      return;
-    }
-
-    const firstCheck = window.setTimeout(() => {
-      checkQrPayment({ autoRegister: true, silent: true });
-    }, 700);
-    const interval = window.setInterval(() => {
-      checkQrPayment({ autoRegister: true, silent: true });
-    }, 1500);
-
-    return () => {
-      window.clearTimeout(firstCheck);
-      window.clearInterval(interval);
-    };
-  }, [
-    isBanecoQrPayment,
-    isCharging,
-    qrPayment?.paymentToken,
-    qrPayment?.qrId,
-    qrPayment?.status,
-  ]);
+    loadDailyIncome({ branchId: selectedBranchId });
+  }, [selectedBranchId, user.id]);
 
   async function loadProductsPage({ reset = false } = {}) {
     if (!selectedBranchId || (!reset && isLoadingProducts)) {
@@ -541,7 +618,9 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
     setProductsError("");
 
     try {
-      const response = await fetch(`/api/pos/products?${params.toString()}`);
+      const response = await fetch(`/api/pos/products?${params.toString()}`, {
+        credentials: "same-origin",
+      });
       const payload = await response.json();
 
       if (!response.ok) {
@@ -565,6 +644,89 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
       if (requestIdRef.current === requestId) {
         setIsLoadingProducts(false);
       }
+    }
+  }
+
+  async function loadDailyIncome({
+    branchId = selectedBranchId,
+    silent = false,
+  } = {}) {
+    if (!branchId) {
+      return;
+    }
+
+    const requestId = dailyIncomeRequestIdRef.current + 1;
+    dailyIncomeRequestIdRef.current = requestId;
+    const params = new URLSearchParams({ branchId });
+
+    if (!silent) {
+      setIsLoadingDailyIncome(true);
+    }
+
+    setDailyIncomeError("");
+
+    try {
+      const response = await fetch(`/api/pos/daily-income?${params}`, {
+        credentials: "same-origin",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.message || "No se pudo cargar ingresos.");
+      }
+
+      if (dailyIncomeRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setDailyIncome(payload.report || emptyDailyIncome);
+    } catch (error) {
+      if (dailyIncomeRequestIdRef.current === requestId) {
+        setDailyIncomeError(
+          error.message || "No se pudo cargar ingresos del dia.",
+        );
+      }
+    } finally {
+      if (dailyIncomeRequestIdRef.current === requestId) {
+        setIsLoadingDailyIncome(false);
+      }
+    }
+  }
+
+  async function downloadDailyIncomePdf() {
+    if (!selectedBranchId || isDownloadingDailyIncome) {
+      return;
+    }
+
+    setIsDownloadingDailyIncome(true);
+    setDailyIncomeError("");
+
+    try {
+      const params = new URLSearchParams({ branchId: selectedBranchId });
+      const response = await fetch(`/api/pos/daily-income/pdf?${params}`, {
+        credentials: "same-origin",
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "No se pudo generar el PDF.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getDownloadFilename(
+        response.headers.get("content-disposition") || "",
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setDailyIncomeError(error.message || "No se pudo descargar el PDF.");
+    } finally {
+      setIsDownloadingDailyIncome(false);
     }
   }
 
@@ -608,6 +770,38 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
         },
       ];
     });
+  }
+
+  function addCustomChargeToCart() {
+    const name = customChargeName.trim();
+    const price = Number(customChargePrice);
+
+    setSaleMessage("");
+    setSaleError("");
+    setLastCompletedSale(null);
+
+    if (!name || !Number.isFinite(price) || price <= 0) {
+      setCustomChargeError("Ingresa nombre y precio valido.");
+      return;
+    }
+
+    setCustomChargeError("");
+    setCart((current) => [
+      ...current,
+      {
+        id: `custom-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 6)}`,
+        name,
+        sku: CUSTOM_CHARGE_SKU,
+        price: Math.round(price * 100) / 100,
+        quantity: 1,
+        stock: Number.POSITIVE_INFINITY,
+        isCustom: true,
+      },
+    ]);
+    setCustomChargeName("");
+    setCustomChargePrice("");
   }
 
   function updateQuantity(productId, direction) {
@@ -696,7 +890,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
     saleResetTimerRef.current = window.setTimeout(() => {
       saleResetTimerRef.current = null;
       resetPosSale();
-    }, 3600);
+    }, SALE_SUCCESS_RESET_DELAY_MS);
   }
 
   function playPaymentSuccessSound() {
@@ -718,6 +912,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
     setSaleError("");
     setLastCompletedSale(null);
     qrPaymentRef.current = null;
+    qrAutoGenerateKeyRef.current = "";
     setQrPayment(null);
     setIsQrPanelOpen(false);
 
@@ -747,6 +942,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
     try {
       const response = await fetch("/api/pos/sales", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           branchId: selectedBranchId,
@@ -756,6 +952,9 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
           items: cart.map((item) => ({
             productId: item.id,
             quantity: item.quantity,
+            isCustom: item.isCustom || false,
+            name: item.name,
+            unitPrice: item.price,
           })),
           ...extraPayload,
         }),
@@ -802,6 +1001,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
       setIsQrPanelOpen(false);
       scheduleSaleReset();
       await loadProductsPage({ reset: true });
+      await loadDailyIncome({ branchId: selectedBranchId, silent: true });
     } catch (error) {
       setSaleError(error.message || "No se pudo registrar la venta.");
     } finally {
@@ -829,6 +1029,9 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
           items: cart.map((item) => ({
             productId: item.id,
             quantity: item.quantity,
+            isCustom: item.isCustom || false,
+            name: item.name,
+            unitPrice: item.price,
           })),
         }),
       });
@@ -844,14 +1047,6 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
       setQrPayment(generatedQr);
       setIsQrPanelOpen(true);
       setSaleMessage("QR Baneco generado. Esperando pago...");
-
-      window.setTimeout(() => {
-        checkQrPayment({
-          autoRegister: true,
-          silent: true,
-          paymentOverride: generatedQr,
-        });
-      }, 500);
     } catch (error) {
       setSaleError(error.message || "No se pudo generar el QR.");
     } finally {
@@ -872,6 +1067,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
 
     qrCheckInFlightRef.current = true;
     setIsCheckingQr(true);
+    setIsQrPanelOpen(true);
 
     if (!silent) {
       setSaleMessage("");
@@ -923,6 +1119,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
             ? {
                 qrId: nextQrPayment.qrId,
                 qrImage: nextQrPayment.qrImage,
+                logoUrl: qrLogoUrl,
                 amount: nextQrPayment.amount,
                 status: nextQrPayment.status,
                 transactionId: nextQrPayment.transactionId,
@@ -955,16 +1152,23 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
       }
 
       if (payload.status.status === "cancelled") {
+        setIsQrPanelOpen(true);
         setSaleMessage("");
-        setSaleError("El QR fue cancelado en Baneco. Genera uno nuevo.");
+        setSaleError(
+          "El QR no tiene pago confirmado. Mantén el QR visible y verifica nuevamente.",
+        );
         return;
       }
 
       if (!silent) {
-        setSaleMessage("Pago QR pendiente de confirmacion.");
+        setIsQrPanelOpen(true);
+        setSaleMessage(
+          "Pago QR pendiente de confirmacion. Mantén el QR visible y verifica nuevamente.",
+        );
       }
     } catch (error) {
       qrAutoRegisterInFlightRef.current = false;
+      setIsQrPanelOpen(true);
       if (!silent) {
         setSaleError(error.message || "No se pudo consultar el QR.");
       }
@@ -992,7 +1196,6 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
       }
 
       setIsQrPanelOpen(true);
-      await checkQrPayment({ autoRegister: true });
       return;
     }
 
@@ -1007,6 +1210,11 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
   const shouldShowInlineSaleMessage = Boolean(
     saleMessage && !lastCompletedSale,
   );
+  const dailyPaymentTotals = dailyIncome.summary?.paymentTotals || {};
+  const dailyCashTotal = dailyPaymentTotals.cash || 0;
+  const dailyQrTotal = dailyPaymentTotals.qr || 0;
+  const dailyTotal = dailyIncome.summary?.total || 0;
+  const dailyCount = dailyIncome.summary?.count || 0;
   const actionLabel = isGeneratingQr
     ? "Generando QR..."
     : isCheckingQr
@@ -1015,8 +1223,10 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
         ? "Registrando..."
         : isBanecoQrPayment
           ? qrPayment
-            ? "Confirmar pago QR"
-            : "Generar QR"
+            ? "Ver QR de cobro"
+            : saleError
+              ? "Reintentar QR"
+              : "Generar QR"
           : isUnavailableQrPayment
             ? "QR no disponible"
             : "Cobrar venta";
@@ -1112,6 +1322,54 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
+            <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/70 px-4 py-3">
+              <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_150px_auto] lg:items-end">
+                <label className="text-xs font-medium text-neutral-400">
+                  Cobro personalizado
+                  <input
+                    value={customChargeName}
+                    onChange={(event) => {
+                      setCustomChargeName(event.target.value);
+                      setCustomChargeError("");
+                    }}
+                    placeholder="Nombre del cobro"
+                    className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
+                  />
+                </label>
+                <label className="text-xs font-medium text-neutral-400">
+                  Precio
+                  <input
+                    value={customChargePrice}
+                    onChange={(event) => {
+                      setCustomChargePrice(event.target.value);
+                      setCustomChargeError("");
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        addCustomChargeToCart();
+                      }
+                    }}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={addCustomChargeToCart}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-neutral-100 px-4 text-sm font-semibold text-neutral-950 transition hover:bg-white"
+                >
+                  <Plus className="size-4" />
+                  Agregar cobro
+                </button>
+              </div>
+              {customChargeError ? (
+                <p className="mt-2 text-sm text-red-300">{customChargeError}</p>
+              ) : null}
+            </div>
+
             <div className="min-h-0 flex-1 overflow-x-auto">
               <div className="flex h-full min-w-[760px] flex-col">
                 <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_110px_110px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
@@ -1184,6 +1442,77 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="shrink-0 rounded-md border border-neutral-800 bg-neutral-900 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold tracking-[0.14em] text-neutral-500 uppercase">
+                  Ingresos del dia
+                </p>
+                <p className="mt-1 text-sm text-neutral-300">
+                  {selectedBranch?.name || "Sucursal"} -{" "}
+                  {user.name || user.email}
+                </p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {formatReportDate(dailyIncome.date)}
+                  {dailyIncome.isLimited
+                    ? " - reporte limitado por volumen"
+                    : ""}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={downloadDailyIncomePdf}
+                disabled={
+                  !selectedBranchId ||
+                  isDownloadingDailyIncome ||
+                  isLoadingDailyIncome
+                }
+                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-neutral-700 bg-neutral-950 px-4 text-sm font-semibold text-neutral-100 transition hover:border-neutral-400 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+              >
+                {isDownloadingDailyIncome ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                Descargar PDF
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
+                <p className="text-xs font-medium text-neutral-500">Efectivo</p>
+                <p className="mt-1 text-base font-semibold">
+                  {isLoadingDailyIncome ? "..." : money(dailyCashTotal)}
+                </p>
+              </div>
+              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
+                <p className="text-xs font-medium text-neutral-500">QR</p>
+                <p className="mt-1 text-base font-semibold">
+                  {isLoadingDailyIncome ? "..." : money(dailyQrTotal)}
+                </p>
+              </div>
+              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
+                <p className="text-xs font-medium text-neutral-500">Total</p>
+                <p className="mt-1 text-base font-semibold">
+                  {isLoadingDailyIncome ? "..." : money(dailyTotal)}
+                </p>
+              </div>
+              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
+                <p className="text-xs font-medium text-neutral-500">Ventas</p>
+                <p className="mt-1 text-base font-semibold">
+                  {isLoadingDailyIncome ? "..." : dailyCount}
+                </p>
+              </div>
+            </div>
+
+            {dailyIncomeError ? (
+              <p className="mt-3 rounded-md border border-red-900 bg-red-950 px-3 py-2 text-sm text-red-200">
+                {dailyIncomeError}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -1292,11 +1621,13 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                     className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
                   />
                 </label>
-                <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                  <p className="text-xs font-medium text-neutral-500">Cambio</p>
-                  <p className="mt-1 text-sm font-semibold">
-                    {money(totals.change)}
-                  </p>
+                <div className="text-xs font-medium text-neutral-400">
+                  <p>Cambio</p>
+                  <div className="mt-1 flex h-11 items-center rounded-md border border-neutral-800 bg-neutral-950 px-3">
+                    <p className="text-sm font-semibold text-neutral-100">
+                      {money(totals.change)}
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -1335,17 +1666,32 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                 </div>
 
                 {qrPayment ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsQrPanelOpen(true)}
-                    className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-cyan-300 text-sm font-semibold text-cyan-950 transition hover:bg-cyan-200"
-                  >
-                    <QrCode className="size-4" />
-                    Ver QR de cobro
-                  </button>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsQrPanelOpen(true)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-cyan-300 text-sm font-semibold text-cyan-950 transition hover:bg-cyan-200"
+                    >
+                      <QrCode className="size-4" />
+                      Ver QR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => checkQrPayment({ autoRegister: true })}
+                      disabled={isCheckingQr || isCharging}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-cyan-700 bg-cyan-900 text-sm font-semibold text-cyan-50 transition hover:border-cyan-400 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-800 disabled:text-neutral-500"
+                    >
+                      {isCheckingQr || isCharging ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <CircleCheck className="size-4" />
+                      )}
+                      Verificar
+                    </button>
+                  </div>
                 ) : (
                   <p className="mt-3 text-sm text-cyan-200">
-                    El QR se abrira en una ventana lateral al generar el cobro.
+                    El QR se genera automaticamente al seleccionar este metodo.
                   </p>
                 )}
               </div>
@@ -1429,9 +1775,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                 </p>
               </div>
             </div>
-            <p className="mt-5 text-sm text-emerald-200">
-              Volviendo al POS...
-            </p>
+            <p className="mt-5 text-sm text-emerald-200">Volviendo al POS...</p>
           </div>
         </div>
       ) : null}
@@ -1449,18 +1793,15 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                 </p>
                 <h2 className="mt-1 text-xl font-semibold">
                   {money(
-                    lastCompletedSale?.total || qrPayment?.amount || totals.total,
+                    lastCompletedSale?.total ||
+                      qrPayment?.amount ||
+                      totals.total,
                   )}
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsQrPanelOpen(false)}
-                className="grid size-10 place-items-center rounded-md border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-white"
-                aria-label="Cerrar QR"
-              >
-                <X className="size-5" />
-              </button>
+              <div className="rounded-md border border-cyan-800 bg-cyan-950 px-3 py-2 text-xs font-semibold text-cyan-100">
+                Visible hasta confirmar
+              </div>
             </div>
 
             {lastCompletedSale ? (
@@ -1473,7 +1814,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                     <p className="mt-5 text-xs font-semibold tracking-[0.16em] text-emerald-300 uppercase">
                       Pago exitoso
                     </p>
-                    <h3 className="mt-3 text-2xl font-semibold leading-tight">
+                    <h3 className="mt-3 text-2xl leading-tight font-semibold">
                       {saleMessage || lastCompletedSale.message}
                     </h3>
                     {lastCompletedSale.senderName ? (
@@ -1541,13 +1882,37 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                       : "Pendiente de pago"}
                   </div>
 
-                  <div className="rounded-md bg-white p-4">
+                  {saleError || saleMessage ? (
+                    <p
+                      className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+                        saleError
+                          ? "border-red-900 bg-red-950 text-red-200"
+                          : "border-cyan-800 bg-cyan-950 text-cyan-100"
+                      }`}
+                    >
+                      {saleError || saleMessage}
+                    </p>
+                  ) : null}
+
+                  <div className="relative rounded-md bg-white p-4">
                     {qrImageSrc ? (
-                      <img
-                        src={qrImageSrc}
-                        alt="QR simple Baneco"
-                        className="mx-auto aspect-square w-full object-contain"
-                      />
+                      <>
+                        <img
+                          src={qrImageSrc}
+                          alt="QR simple Baneco"
+                          className="mx-auto aspect-square w-full object-contain"
+                        />
+                        {qrLogoUrl ? (
+                          <div className="pointer-events-none absolute top-1/2 left-1/2 grid aspect-square h-[10%] max-h-12 min-h-8 w-[10%] max-w-12 min-w-8 -translate-x-1/2 -translate-y-1/2 place-items-center overflow-hidden rounded-full bg-white p-0.5 shadow-sm ring-2 ring-white">
+                            <img
+                              src={qrLogoUrl}
+                              alt=""
+                              onError={() => setHasQrLogoImageError(true)}
+                              className="max-h-full max-w-full rounded-full object-contain"
+                            />
+                          </div>
+                        ) : null}
+                      </>
                     ) : (
                       <div className="grid aspect-square place-items-center text-sm font-medium text-neutral-500">
                         QR no disponible
@@ -1562,9 +1927,7 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                     </div>
                     <div className="min-w-0 rounded-md border border-neutral-800 bg-neutral-900 p-3">
                       <p className="font-medium text-neutral-400">TX</p>
-                      <p className="mt-1 truncate">
-                        {qrPayment.transactionId}
-                      </p>
+                      <p className="mt-1 truncate">{qrPayment.transactionId}</p>
                     </div>
                   </div>
                 </div>
@@ -1578,15 +1941,11 @@ export default function DashboardClient({ user, catalog, catalogError = "" }) {
                   >
                     {isCheckingQr || isCharging
                       ? "Consultando..."
-                      : "Confirmar pago QR"}
+                      : "Verificar pago en banco"}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsQrPanelOpen(false)}
-                    className="mt-3 h-11 w-full rounded-md border border-neutral-800 text-sm font-semibold text-neutral-300 transition hover:border-neutral-500 hover:text-white"
-                  >
-                    Ocultar ventana
-                  </button>
+                  <p className="mt-3 text-center text-xs text-neutral-500">
+                    El QR se mantiene visible hasta que Baneco confirme el pago.
+                  </p>
                 </div>
               </>
             )}

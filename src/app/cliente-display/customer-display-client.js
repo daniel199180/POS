@@ -18,6 +18,8 @@ import {
   getCustomerDisplayStorageKey,
 } from "@/lib/pos/customer-display";
 
+const PAYMENT_SUCCESS_RESET_DELAY_MS = 2500;
+
 function money(value) {
   return new Intl.NumberFormat("es-BO", {
     style: "currency",
@@ -75,12 +77,15 @@ export default function CustomerDisplayClient({ initialSessionId }) {
   const [successOverlay, setSuccessOverlay] = useState(null);
   const [lastMessageAt, setLastMessageAt] = useState("");
   const [now, setNow] = useState(Date.now());
+  const [hasQrLogoImageError, setHasQrLogoImageError] = useState(false);
   const isConnected = Boolean(
     lastMessageAt && now - Date.parse(lastMessageAt) < 12_000,
   );
   const qrImageSrc = getQrImageSrc(snapshot.qr?.qrImage || "");
+  const logoUrl = snapshot.qr?.logoUrl || "";
+  const qrLogoUrl = logoUrl && !hasQrLogoImageError ? logoUrl : "";
   const hasCart = snapshot.cart.length > 0;
-  const isQrPayment = snapshot.payment.type === "qr";
+  const isQrPayment = snapshot.payment.type === "qr" || Boolean(snapshot.qr);
   const visibleCartItems = snapshot.cart.slice(0, 8);
   const hiddenCartItems = Math.max(
     snapshot.cart.length - visibleCartItems.length,
@@ -109,7 +114,7 @@ export default function CustomerDisplayClient({ initialSessionId }) {
       };
     }
 
-    if (snapshot.payment.type === "qr" && snapshot.qr) {
+    if (snapshot.qr) {
       return {
         tone: "pending",
         text: "QR listo para pagar.",
@@ -135,6 +140,10 @@ export default function CustomerDisplayClient({ initialSessionId }) {
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    setHasQrLogoImageError(false);
+  }, [logoUrl]);
+
   useEffect(
     () => () => {
       if (successTimerRef.current) {
@@ -152,6 +161,31 @@ export default function CustomerDisplayClient({ initialSessionId }) {
     const storageKey = getCustomerDisplayStorageKey(initialSessionId);
     const heartbeatKey = getCustomerDisplayHeartbeatKey(initialSessionId);
     const markConnected = () => setLastMessageAt(new Date().toISOString());
+    const resetToEmptySnapshot = () => {
+      activeSuccessIdRef.current = "";
+      setSuccessOverlay(null);
+      setSnapshot((current) => {
+        const emptySnapshot = {
+          ...createEmptyCustomerDisplaySnapshot(initialSessionId),
+          branch: current.branch,
+          cashier: current.cashier,
+          updatedAt: new Date().toISOString(),
+        };
+
+        try {
+          window.localStorage.setItem(
+            storageKey,
+            JSON.stringify(emptySnapshot),
+          );
+        } catch {
+          // The live display still resets even if localStorage is blocked.
+        }
+
+        latestUpdatedAtRef.current = emptySnapshot.updatedAt;
+
+        return emptySnapshot;
+      });
+    };
     const playSuccessAudioOnce = (successId) => {
       if (!successId || playedSuccessAudioIdsRef.current.has(successId)) {
         return;
@@ -208,28 +242,19 @@ export default function CustomerDisplayClient({ initialSessionId }) {
 
         successTimerRef.current = window.setTimeout(() => {
           dismissedSuccessIdRef.current = completedSaleId;
-          activeSuccessIdRef.current = "";
-          setSuccessOverlay(null);
-          setSnapshot((current) => {
-            const emptySnapshot = {
-              ...createEmptyCustomerDisplaySnapshot(initialSessionId),
-              branch: current.branch,
-              cashier: current.cashier,
-              updatedAt: new Date().toISOString(),
-            };
+          resetToEmptySnapshot();
+        }, PAYMENT_SUCCESS_RESET_DELAY_MS);
+        return;
+      }
 
-            try {
-              window.localStorage.setItem(
-                storageKey,
-                JSON.stringify(emptySnapshot),
-              );
-            } catch {
-              // The live display still resets even if localStorage is blocked.
-            }
+      if (nextSnapshot.qr?.status === "paid" && !completedSaleId) {
+        if (successTimerRef.current) {
+          window.clearTimeout(successTimerRef.current);
+        }
 
-            return emptySnapshot;
-          });
-        }, 5000);
+        successTimerRef.current = window.setTimeout(() => {
+          resetToEmptySnapshot();
+        }, PAYMENT_SUCCESS_RESET_DELAY_MS);
       }
     };
     let storedSnapshot = null;
@@ -473,13 +498,25 @@ export default function CustomerDisplayClient({ initialSessionId }) {
                   )}
                 </div>
 
-                <div className="mt-4 grid min-h-0 flex-1 place-items-center rounded-md bg-white p-3">
+                <div className="relative mt-4 grid min-h-0 flex-1 place-items-center rounded-md bg-white p-3">
                   {snapshot.qr && qrImageSrc ? (
-                    <img
-                      src={qrImageSrc}
-                      alt="QR simple Baneco"
-                      className="max-h-full max-w-full object-contain"
-                    />
+                    <>
+                      <img
+                        src={qrImageSrc}
+                        alt="QR simple Baneco"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                      {qrLogoUrl ? (
+                        <div className="pointer-events-none absolute top-1/2 left-1/2 grid aspect-square h-[10%] max-h-12 min-h-8 w-[10%] max-w-12 min-w-8 -translate-x-1/2 -translate-y-1/2 place-items-center overflow-hidden rounded-full bg-white p-0.5 shadow-sm ring-2 ring-white">
+                          <img
+                            src={qrLogoUrl}
+                            alt=""
+                            onError={() => setHasQrLogoImageError(true)}
+                            className="max-h-full max-w-full rounded-full object-contain"
+                          />
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <div className="grid aspect-square w-full max-w-72 place-items-center rounded-md border border-neutral-200 text-center text-neutral-500">
                       QR pendiente

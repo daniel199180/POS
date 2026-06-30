@@ -1,11 +1,25 @@
 import { NextResponse } from "next/server";
-import { getApiErrorResponse, getCurrentUserContext } from "@/lib/pos/auth";
-import { createSale, listSales } from "@/lib/pos/sales";
+import {
+  ForbiddenError,
+  UnauthorizedError,
+  getApiErrorResponse,
+  getCurrentUserContext,
+} from "@/lib/pos/auth";
+import {
+  createSale,
+  createSaleContextFromBanecoQrToken,
+  listSales,
+} from "@/lib/pos/sales";
 
 export async function GET(request) {
   try {
     const url = new URL(request.url);
     const context = await getCurrentUserContext({ redirectToLogin: false });
+
+    if (!context.isAdmin) {
+      throw new ForbiddenError("Solo un administrador puede consultar ventas.");
+    }
+
     const payload = await listSales(context, {
       page: url.searchParams.get("page"),
       pageSize: url.searchParams.get("pageSize"),
@@ -27,7 +41,25 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const input = await request.json();
-    const context = await getCurrentUserContext({ redirectToLogin: false });
+    let context;
+
+    try {
+      context = await getCurrentUserContext({ redirectToLogin: false });
+    } catch (error) {
+      if (!(error instanceof UnauthorizedError)) {
+        throw error;
+      }
+
+      context = createSaleContextFromBanecoQrToken(
+        input,
+        request.headers.get("user-agent"),
+      );
+
+      if (!context) {
+        throw error;
+      }
+    }
+
     const sale = await createSale(context, input);
 
     return NextResponse.json({ sale }, { status: 201 });

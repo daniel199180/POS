@@ -54,6 +54,16 @@ export function getAuthErrorResponse(error) {
   }
 
   if (error instanceof AppwriteException) {
+    if (error.type === "user_unauthorized") {
+      return {
+        status: 500,
+        body: {
+          message:
+            "APPWRITE_API_KEY no tiene permisos en este proyecto Appwrite. Crea una API key server-side para este proyecto y actualiza .env.local.",
+        },
+      };
+    }
+
     if (error.code === 401) {
       return {
         status: 401,

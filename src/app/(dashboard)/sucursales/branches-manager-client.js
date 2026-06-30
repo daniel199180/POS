@@ -43,7 +43,9 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
 
   async function refreshBranches(search = "") {
     const params = new URLSearchParams({ search });
-    const response = await fetch(`/api/pos/manage/branches?${params}`);
+    const response = await fetch(`/api/pos/manage/branches?${params}`, {
+      credentials: "same-origin",
+    });
     const payload = await response.json();
 
     if (!response.ok) {
@@ -91,6 +93,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
           : "/api/pos/manage/branches",
         {
           method: form.id ? "PATCH" : "POST",
+          credentials: "same-origin",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(form),
         },
@@ -123,6 +126,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
     try {
       const response = await fetch(`/api/pos/manage/branches/${branchId}`, {
         method: "DELETE",
+        credentials: "same-origin",
       });
       const payload = await response.json();
 
@@ -147,7 +151,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
       <div className="space-y-4">
         <div className="flex flex-col gap-3 border-b border-neutral-800 pb-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-medium uppercase text-neutral-500">
+            <p className="text-xs font-medium text-neutral-500 uppercase">
               Operacion
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight">
@@ -159,18 +163,18 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
           </div>
 
           <div className="relative w-full lg:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-neutral-500" />
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-500" />
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Buscar por nombre, codigo o ciudad"
-              className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-neutral-300"
+              className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
             />
             {searchTerm ? (
               <button
                 type="button"
                 onClick={() => setSearchTerm("")}
-                className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100"
+                className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100"
                 aria-label="Limpiar busqueda"
               >
                 <X className="size-4" />
@@ -194,7 +198,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
         <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
           <div className="overflow-x-auto">
             <div className="min-w-[760px]">
-              <div className="grid grid-cols-[minmax(220px,1fr)_100px_150px_130px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium uppercase text-neutral-500">
+              <div className="grid grid-cols-[minmax(220px,1fr)_100px_150px_130px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
                 <span>Sucursal</span>
                 <span>Codigo</span>
                 <span>Ciudad</span>
@@ -269,7 +273,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
       >
         <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-4">
           <div>
-            <p className="text-xs font-medium uppercase text-neutral-500">
+            <p className="text-xs font-medium text-neutral-500 uppercase">
               {form.id ? "Edicion" : "Nueva"}
             </p>
             <h2 className="mt-1 text-lg font-semibold">Sucursal</h2>
@@ -299,7 +303,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
               value={form.name}
               onChange={(event) => updateField("name", event.target.value)}
               disabled={!canManage}
-              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
             />
           </label>
 
@@ -310,7 +314,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
                 value={form.code}
                 onChange={(event) => updateField("code", event.target.value)}
                 disabled={!canManage}
-                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
             </label>
             <label className="text-xs font-medium text-neutral-400">
@@ -319,7 +323,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
                 value={form.city}
                 onChange={(event) => updateField("city", event.target.value)}
                 disabled={!canManage}
-                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
             </label>
           </div>
@@ -330,7 +334,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
               value={form.address}
               onChange={(event) => updateField("address", event.target.value)}
               disabled={!canManage}
-              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
             />
           </label>
 
@@ -340,14 +344,16 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
               value={form.phone}
               onChange={(event) => updateField("phone", event.target.value)}
               disabled={!canManage}
-              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
             />
           </label>
 
           <label className="flex items-center gap-2 text-sm text-neutral-300">
             <input
               checked={form.isActive}
-              onChange={(event) => updateField("isActive", event.target.checked)}
+              onChange={(event) =>
+                updateField("isActive", event.target.checked)
+              }
               disabled={!canManage}
               type="checkbox"
               className="size-4 accent-neutral-100"

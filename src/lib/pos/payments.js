@@ -9,6 +9,8 @@ const { databaseId, collections } = appwriteConfig;
 const paymentTypes = new Set(["cash", "qr", "card"]);
 const qrProviders = new Set(["manual", "baneco"]);
 const connectionStatuses = new Set(["unchecked", "online", "failed"]);
+const credentialsAlgorithm = "aes-256-gcm";
+const currentCredentialsVersion = "v2";
 
 function text(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
@@ -29,22 +31,100 @@ function inputError(message) {
   return error;
 }
 
-function getEncryptionKey() {
-  const secret =
-    process.env.PAYMENT_CREDENTIALS_SECRET || process.env.APPWRITE_API_KEY;
+function buildEncryptionKey(secret, isCurrent) {
+  const digest = crypto.createHash("sha256").update(secret).digest();
 
-  if (!secret) {
-    throw new Error(
-      "PAYMENT_CREDENTIALS_SECRET or APPWRITE_API_KEY is required.",
-    );
+  return {
+    id: digest.toString("hex").slice(0, 12),
+    isCurrent,
+    key: digest,
+  };
+}
+
+function getEncryptionKeys() {
+  const currentSecret = text(process.env.PAYMENT_CREDENTIALS_SECRET);
+  const legacySecret = text(process.env.APPWRITE_API_KEY);
+  const previousSecrets = [
+    process.env.PAYMENT_CREDENTIALS_SECRET_PREVIOUS,
+    process.env.APPWRITE_API_KEY_PREVIOUS,
+    legacySecret,
+  ];
+  const keys = [];
+  const seen = new Set();
+  const addSecret = (secret, isCurrent) => {
+    const normalizedSecret = text(secret);
+
+    if (!normalizedSecret || seen.has(normalizedSecret)) {
+      return;
+    }
+
+    seen.add(normalizedSecret);
+    keys.push(buildEncryptionKey(normalizedSecret, isCurrent));
+  };
+
+  addSecret(currentSecret || legacySecret, true);
+
+  for (const secret of previousSecrets) {
+    addSecret(secret, false);
   }
 
-  return crypto.createHash("sha256").update(secret).digest();
+  if (keys.length === 0) {
+    throw new Error("PAYMENT_CREDENTIALS_SECRET is required.");
+  }
+
+  return keys;
+}
+
+function getCurrentEncryptionKey() {
+  return getEncryptionKeys().find((key) => key.isCurrent);
+}
+
+function encryptedCredentialError() {
+  return inputError(
+    "No se pudieron descifrar las credenciales Baneco. Reingresa y guarda las credenciales QR en Pagos para regenerarlas con la clave actual.",
+  );
+}
+
+function parseEncryptedCredentialPayload(encryptedPayload) {
+  const parts = text(encryptedPayload).split(":");
+  const version = parts[0];
+
+  if (version === currentCredentialsVersion) {
+    const [, keyId, ivValue, tagValue, encryptedValue] = parts;
+
+    return {
+      encryptedValue,
+      ivValue,
+      keyId,
+      tagValue,
+      version,
+    };
+  }
+
+  if (version === "v1") {
+    const [, ivValue, tagValue, encryptedValue] = parts;
+
+    return {
+      encryptedValue,
+      ivValue,
+      keyId: "",
+      tagValue,
+      version,
+    };
+  }
+
+  throw encryptedCredentialError();
 }
 
 export function encryptCredentials(payload) {
+  const currentKey = getCurrentEncryptionKey();
+
+  if (!currentKey) {
+    throw new Error("PAYMENT_CREDENTIALS_SECRET is required.");
+  }
+
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", getEncryptionKey(), iv);
+  const cipher = crypto.createCipheriv(credentialsAlgorithm, currentKey.key, iv);
   const encrypted = Buffer.concat([
     cipher.update(JSON.stringify(payload), "utf8"),
     cipher.final(),
@@ -52,34 +132,53 @@ export function encryptCredentials(payload) {
   const tag = cipher.getAuthTag();
 
   return [
-    "v1",
+    currentCredentialsVersion,
+    currentKey.id,
     iv.toString("base64url"),
     tag.toString("base64url"),
     encrypted.toString("base64url"),
   ].join(":");
 }
 
-export function decryptCredentials(encryptedPayload) {
-  const [version, ivValue, tagValue, encryptedValue] =
-    text(encryptedPayload).split(":");
+export function decryptCredentialsWithRotation(encryptedPayload) {
+  const { encryptedValue, ivValue, keyId, tagValue, version } =
+    parseEncryptedCredentialPayload(encryptedPayload);
 
-  if (version !== "v1" || !ivValue || !tagValue || !encryptedValue) {
-    throw new Error("Credenciales cifradas invalidas.");
+  if (!ivValue || !tagValue || !encryptedValue) {
+    throw encryptedCredentialError();
   }
 
-  const decipher = crypto.createDecipheriv(
-    "aes-256-gcm",
-    getEncryptionKey(),
-    Buffer.from(ivValue, "base64url"),
-  );
-  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  const keys = getEncryptionKeys().filter((key) => !keyId || key.id === keyId);
 
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(encryptedValue, "base64url")),
-    decipher.final(),
-  ]);
+  for (const candidate of keys) {
+    try {
+      const decipher = crypto.createDecipheriv(
+        credentialsAlgorithm,
+        candidate.key,
+        Buffer.from(ivValue, "base64url"),
+      );
+      decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
 
-  return JSON.parse(decrypted.toString("utf8"));
+      const decrypted = Buffer.concat([
+        decipher.update(Buffer.from(encryptedValue, "base64url")),
+        decipher.final(),
+      ]);
+
+      return {
+        credentials: JSON.parse(decrypted.toString("utf8")),
+        needsRotation:
+          version !== currentCredentialsVersion || !candidate.isCurrent,
+      };
+    } catch {
+      // Keep trying configured previous secrets during controlled rotations.
+    }
+  }
+
+  throw encryptedCredentialError();
+}
+
+export function decryptCredentials(encryptedPayload) {
+  return decryptCredentialsWithRotation(encryptedPayload).credentials;
 }
 
 function maskValue(value, visible = 3) {
@@ -433,17 +532,28 @@ export async function testStoredBanecoCredentials(context, methodId) {
     );
   }
 
-  const credentials = decryptCredentials(current.encryptedPayload);
+  const decryptedCredentials = decryptCredentialsWithRotation(
+    current.encryptedPayload,
+  );
+  const credentials = decryptedCredentials.credentials;
   const connection = await testBanecoCredentials(credentials, method.config);
+  const data = {
+    connectionStatus: connection.status,
+    connectionCheckedAt: connection.checkedAt,
+    connectionMessage: connection.message.slice(0, 300),
+  };
+
+  if (decryptedCredentials.needsRotation || connection.credentials) {
+    data.encryptedPayload = encryptCredentials(
+      connection.credentials || credentials,
+    );
+  }
+
   const document = await databases.updateDocument({
     databaseId,
     collectionId: collections.branchPaymentCredentials,
     documentId: current.$id,
-    data: {
-      connectionStatus: connection.status,
-      connectionCheckedAt: connection.checkedAt,
-      connectionMessage: connection.message.slice(0, 300),
-    },
+    data,
   });
 
   return toCredentialStatus(document);

@@ -4,6 +4,7 @@ import { createAdminClient } from "../appwrite/admin.js";
 import {
   assertPosBanecoQrPaid,
   assertPosBanecoQrPaidToken,
+  getPosBanecoQrPaymentTokenPayload,
 } from "./baneco-qr.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
 
@@ -15,6 +16,8 @@ const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
 const SUMMARY_LIMIT = 2000;
 const LA_PAZ_OFFSET = "-04:00";
+const CUSTOM_PRODUCT_SKU = "CUSTOM";
+const CUSTOM_PRODUCT_ID_PREFIX = "custom-";
 
 function text(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
@@ -49,6 +52,87 @@ function parseConfig(value) {
   } catch {
     return {};
   }
+}
+
+function normalizeTokenBranchIds(value, fallbackBranchId) {
+  const branchIds = Array.isArray(value)
+    ? value.map((branchId) => text(branchId))
+    : [];
+  const uniqueBranchIds = branchIds.filter(Boolean);
+  const fallback = text(fallbackBranchId);
+
+  if (fallback && !uniqueBranchIds.includes(fallback)) {
+    uniqueBranchIds.push(fallback);
+  }
+
+  return uniqueBranchIds;
+}
+
+export function createSaleContextFromBanecoQrToken(input, userAgent) {
+  const branchId = text(input.branchId);
+  const paymentMethodId = text(input.paymentMethodId);
+  const qrInput = input.banecoQr || {};
+  const qrId = text(qrInput.qrId);
+  const paymentToken = text(qrInput.paymentToken);
+
+  if (!branchId || !paymentMethodId || !qrId || !paymentToken) {
+    return null;
+  }
+
+  const tokenPayload = getPosBanecoQrPaymentTokenPayload(
+    {
+      paymentToken,
+    },
+    {
+      branchId,
+      paymentMethodId,
+      qrId,
+    },
+  );
+
+  if (tokenPayload.tokenType !== "baneco-qr-payment") {
+    return null;
+  }
+
+  const cashier = tokenPayload.cashier || {};
+  const userId = text(cashier.userId);
+
+  if (!userId) {
+    return null;
+  }
+
+  const email = text(cashier.email);
+  const name = text(cashier.name) || email || "Cajero";
+  const role = cashier.profileRole === "admin" ? "admin" : "cashier";
+  const allowedBranchIds = normalizeTokenBranchIds(
+    cashier.allowedBranchIds,
+    branchId,
+  );
+
+  return {
+    user: {
+      id: userId,
+      name,
+      email,
+    },
+    profile: {
+      id: text(cashier.profileId),
+      userId,
+      name,
+      email,
+      role,
+      branchId,
+      allowedBranchIds,
+      isActive: true,
+    },
+    userAgent,
+    isAdmin: role === "admin",
+    canManageCatalog: role === "admin",
+    canManagePayments: role === "admin",
+    canManageUsers: role === "admin",
+    allowedBranchIds,
+    fromSignedQrPaymentToken: true,
+  };
 }
 
 function formatLocalDate(date = new Date()) {
@@ -153,6 +237,31 @@ function toSaleItem(document) {
     discount: document.discount || 0,
     subtotal: document.subtotal,
   };
+}
+
+async function fetchSaleItemsBySaleIds(databases, saleIds) {
+  if (saleIds.length === 0) {
+    return new Map();
+  }
+
+  const result = await databases.listDocuments({
+    databaseId,
+    collectionId: collections.saleItems,
+    queries: [
+      Query.equal("saleId", saleIds),
+      Query.orderAsc("$createdAt"),
+      Query.limit(500),
+    ],
+  });
+  const itemsBySaleId = new Map(saleIds.map((saleId) => [saleId, []]));
+
+  for (const item of result.documents.map(toSaleItem)) {
+    const saleItems = itemsBySaleId.get(item.saleId) || [];
+    saleItems.push(item);
+    itemsBySaleId.set(item.saleId, saleItems);
+  }
+
+  return itemsBySaleId;
 }
 
 function matchesSaleSearch(sale, search) {
@@ -300,6 +409,8 @@ function sanitizeSaleItems(items) {
   for (const item of items) {
     const productId = text(item.productId || item.id);
     const quantity = number(item.quantity, 0);
+    const isCustom =
+      item.isCustom === true || productId.startsWith(CUSTOM_PRODUCT_ID_PREFIX);
 
     if (!productId || quantity <= 0) {
       throw inputError(
@@ -307,10 +418,32 @@ function sanitizeSaleItems(items) {
       );
     }
 
+    if (isCustom) {
+      const name = text(item.name).slice(0, 200);
+      const unitPrice = roundMoney(item.unitPrice || item.price);
+
+      if (!name || unitPrice <= 0) {
+        throw inputError(
+          "Los cobros personalizados deben tener nombre y precio valido.",
+        );
+      }
+
+      itemsByProduct.set(productId.slice(0, 36), {
+        productId: productId.slice(0, 36),
+        productName: name,
+        productSku: CUSTOM_PRODUCT_SKU,
+        quantity,
+        unitPrice,
+        isCustom: true,
+      });
+      continue;
+    }
+
     const currentQuantity = itemsByProduct.get(productId)?.quantity || 0;
     itemsByProduct.set(productId, {
       productId,
       quantity: currentQuantity + quantity,
+      isCustom: false,
     });
   }
 
@@ -459,19 +592,98 @@ export async function listSales(context, filters = {}) {
         queryFilters.offset + queryFilters.pageSize,
       )
     : sales;
+  const itemsBySaleId = await fetchSaleItemsBySaleIds(
+    databases,
+    paginatedSales.map((sale) => sale.id),
+  );
   const summarySales = await fetchSummarySales(databases, context, {
     ...filters,
     search,
   });
 
   return {
-    sales: paginatedSales,
+    sales: paginatedSales.map((sale) => ({
+      ...sale,
+      items: itemsBySaleId.get(sale.id) || [],
+    })),
     summary: getSaleSummary(summarySales),
     page: queryFilters.page,
     pageSize: queryFilters.pageSize,
     total: search ? sales.length : result.total,
     dateFrom: queryFilters.dateRange.dateFrom,
     dateTo: queryFilters.dateRange.dateTo,
+  };
+}
+
+export async function getDailyIncomeReport(context, filters = {}) {
+  const branchId = text(filters.branchId);
+
+  if (!branchId) {
+    throw inputError("Selecciona una sucursal.");
+  }
+
+  if (!canAccessBranch(context, branchId)) {
+    throw new ForbiddenError("No tienes acceso a esta sucursal.");
+  }
+
+  const reportDate = formatLocalDate();
+  const { databases } = createAdminClient(context.userAgent);
+  const branchDocument = await databases.getDocument({
+    databaseId,
+    collectionId: collections.branches,
+    documentId: branchId,
+  });
+  const { queries } = buildSalesQueries(
+    context,
+    {
+      dateFrom: reportDate,
+      dateTo: reportDate,
+      branchId,
+      cashierId: context.user.id,
+      status: "completed",
+    },
+    { paginate: false },
+  );
+  const documents = [];
+  let offset = 0;
+  let totalRecords = 0;
+
+  while (documents.length < SUMMARY_LIMIT) {
+    const result = await databases.listDocuments({
+      databaseId,
+      collectionId: collections.sales,
+      queries: [
+        ...queries,
+        Query.limit(Math.min(MAX_PAGE_SIZE, SUMMARY_LIMIT - documents.length)),
+        Query.offset(offset),
+      ],
+    });
+
+    totalRecords = result.total;
+    documents.push(...result.documents);
+
+    if (result.documents.length < MAX_PAGE_SIZE) {
+      break;
+    }
+
+    offset += result.documents.length;
+  }
+
+  const sales = documents.map(toSale);
+
+  return {
+    date: reportDate,
+    generatedAt: new Date().toISOString(),
+    branch: toBranch(branchDocument),
+    cashier: {
+      id: context.user.id,
+      name: context.profile?.name || context.user.name || context.user.email,
+      email: context.user.email,
+    },
+    summary: getSaleSummary(sales),
+    sales,
+    totalRecords,
+    isLimited: totalRecords > sales.length,
   };
 }
 
@@ -513,6 +725,19 @@ export async function createSale(context, input) {
   const saleItems = [];
 
   for (const rawItem of rawItems) {
+    if (rawItem.isCustom) {
+      saleItems.push({
+        productId: rawItem.productId,
+        productName: rawItem.productName,
+        productSku: rawItem.productSku,
+        quantity: rawItem.quantity,
+        unitPrice: rawItem.unitPrice,
+        subtotal: roundMoney(rawItem.unitPrice * rawItem.quantity),
+        isCustom: true,
+      });
+      continue;
+    }
+
     const [product, stock] = await Promise.all([
       databases.getDocument({
         databaseId,
@@ -531,11 +756,15 @@ export async function createSale(context, input) {
     }
 
     saleItems.push({
+      productId: product.$id,
+      productName: product.name,
+      productSku: product.sku,
       product,
       stock,
       quantity: rawItem.quantity,
       unitPrice: roundMoney(product.price),
       subtotal: roundMoney(product.price * rawItem.quantity),
+      isCustom: false,
     });
   }
 
@@ -628,18 +857,15 @@ export async function createSale(context, input) {
   });
 
   for (const item of saleItems) {
-    const previousQty = item.stock.quantity;
-    const newQty = roundMoney(previousQty - item.quantity);
-
     await databases.createDocument({
       databaseId,
       collectionId: collections.saleItems,
       documentId: ID.unique(),
       data: {
         saleId: sale.$id,
-        productId: item.product.$id,
-        productName: item.product.name,
-        productSku: item.product.sku,
+        productId: item.productId,
+        productName: item.productName,
+        productSku: item.productSku,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         discount: 0,
@@ -647,6 +873,13 @@ export async function createSale(context, input) {
       },
       permissions: documentPermissions,
     });
+
+    if (item.isCustom) {
+      continue;
+    }
+
+    const previousQty = item.stock.quantity;
+    const newQty = roundMoney(previousQty - item.quantity);
 
     await databases.updateDocument({
       databaseId,
@@ -706,6 +939,13 @@ export async function cancelSale(context, saleId, input = {}) {
   }
 
   for (const item of saleItems) {
+    if (
+      item.productSku === CUSTOM_PRODUCT_SKU ||
+      item.productId.startsWith(CUSTOM_PRODUCT_ID_PREFIX)
+    ) {
+      continue;
+    }
+
     const stock = await getStockDocument(
       databases,
       item.productId,

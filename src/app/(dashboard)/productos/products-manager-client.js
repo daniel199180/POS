@@ -90,7 +90,9 @@ export default function ProductsManagerClient({
 
   async function refreshProducts(search = "") {
     const params = new URLSearchParams({ search });
-    const response = await fetch(`/api/pos/manage/products?${params}`);
+    const response = await fetch(`/api/pos/manage/products?${params}`, {
+      credentials: "same-origin",
+    });
     const payload = await response.json();
 
     if (!response.ok) {
@@ -151,6 +153,7 @@ export default function ProductsManagerClient({
           : "/api/pos/manage/products",
         {
           method: form.id ? "PATCH" : "POST",
+          credentials: "same-origin",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(form),
         },
@@ -183,6 +186,7 @@ export default function ProductsManagerClient({
     try {
       const response = await fetch(`/api/pos/manage/products/${productId}`, {
         method: "DELETE",
+        credentials: "same-origin",
       });
       const payload = await response.json();
 
@@ -207,7 +211,7 @@ export default function ProductsManagerClient({
       <div className="space-y-4">
         <div className="flex flex-col gap-3 border-b border-neutral-800 pb-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-medium uppercase text-neutral-500">
+            <p className="text-xs font-medium text-neutral-500 uppercase">
               Catalogo
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight">
@@ -219,18 +223,18 @@ export default function ProductsManagerClient({
           </div>
 
           <div className="relative w-full lg:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-neutral-500" />
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-500" />
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Buscar producto por nombre, SKU o codigo"
-              className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-neutral-300"
+              className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
             />
             {searchTerm ? (
               <button
                 type="button"
                 onClick={() => setSearchTerm("")}
-                className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100"
+                className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100"
                 aria-label="Limpiar busqueda"
               >
                 <X className="size-4" />
@@ -254,7 +258,7 @@ export default function ProductsManagerClient({
         <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
           <div className="overflow-x-auto">
             <div className="min-w-[820px]">
-              <div className="grid grid-cols-[minmax(260px,1fr)_130px_120px_120px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium uppercase text-neutral-500">
+              <div className="grid grid-cols-[minmax(260px,1fr)_130px_120px_120px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
                 <span>Producto</span>
                 <span>SKU</span>
                 <span>Precio</span>
@@ -266,8 +270,7 @@ export default function ProductsManagerClient({
                 {products.map((product) => {
                   const stockTotal = branches.reduce(
                     (total, branch) =>
-                      total +
-                      (product.stockByBranch[branch.id]?.quantity || 0),
+                      total + (product.stockByBranch[branch.id]?.quantity || 0),
                     0,
                   );
 
@@ -332,7 +335,7 @@ export default function ProductsManagerClient({
       >
         <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-4">
           <div>
-            <p className="text-xs font-medium uppercase text-neutral-500">
+            <p className="text-xs font-medium text-neutral-500 uppercase">
               {form.id ? "Edicion" : "Nuevo"}
             </p>
             <h2 className="mt-1 text-lg font-semibold">Producto</h2>
@@ -362,7 +365,7 @@ export default function ProductsManagerClient({
               value={form.name}
               onChange={(event) => updateField("name", event.target.value)}
               disabled={!canManage}
-              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
             />
           </label>
 
@@ -373,18 +376,16 @@ export default function ProductsManagerClient({
                 value={form.sku}
                 onChange={(event) => updateField("sku", event.target.value)}
                 disabled={!canManage}
-                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
             </label>
             <label className="text-xs font-medium text-neutral-400">
               Codigo
               <input
                 value={form.barcode}
-                onChange={(event) =>
-                  updateField("barcode", event.target.value)
-                }
+                onChange={(event) => updateField("barcode", event.target.value)}
                 disabled={!canManage}
-                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
             </label>
           </div>
@@ -398,7 +399,7 @@ export default function ProductsManagerClient({
               }
               disabled={!canManage}
               rows={3}
-              className="mt-1 w-full resize-none rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+              className="mt-1 w-full resize-none rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
             />
           </label>
 
@@ -412,7 +413,7 @@ export default function ProductsManagerClient({
                 type="number"
                 min="0"
                 step="0.01"
-                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
             </label>
             <label className="text-xs font-medium text-neutral-400">
@@ -424,7 +425,7 @@ export default function ProductsManagerClient({
                 type="number"
                 min="0"
                 step="0.01"
-                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
             </label>
             <label className="text-xs font-medium text-neutral-400">
@@ -433,7 +434,7 @@ export default function ProductsManagerClient({
                 value={form.unit}
                 onChange={(event) => updateField("unit", event.target.value)}
                 disabled={!canManage}
-                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               >
                 <option value="unit">Unidad</option>
                 <option value="kg">Kg</option>
@@ -446,7 +447,9 @@ export default function ProductsManagerClient({
           <label className="flex items-center gap-2 text-sm text-neutral-300">
             <input
               checked={form.isActive}
-              onChange={(event) => updateField("isActive", event.target.checked)}
+              onChange={(event) =>
+                updateField("isActive", event.target.checked)
+              }
               disabled={!canManage}
               type="checkbox"
               className="size-4 accent-neutral-100"
@@ -456,7 +459,7 @@ export default function ProductsManagerClient({
         </div>
 
         <div className="mt-5 border-t border-neutral-800 pt-4">
-          <p className="text-xs font-medium uppercase text-neutral-500">
+          <p className="text-xs font-medium text-neutral-500 uppercase">
             Stock por sucursal
           </p>
           <div className="mt-3 space-y-2">
@@ -477,7 +480,7 @@ export default function ProductsManagerClient({
                   type="number"
                   min="0"
                   step="0.01"
-                  className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                  className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
                 />
                 <input
                   value={form.stockByBranch[branch.id]?.minStock ?? 0}
@@ -488,7 +491,7 @@ export default function ProductsManagerClient({
                   type="number"
                   min="0"
                   step="0.01"
-                  className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-300 disabled:opacity-60"
+                  className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
                 />
               </div>
             ))}

@@ -10,6 +10,7 @@ import {
   PanelLeftClose,
   CreditCard,
   ReceiptText,
+  Settings,
   ShoppingCart,
   Store,
   Users,
@@ -25,16 +26,19 @@ const navigation = [
     href: "/productos",
     label: "Productos",
     icon: Package,
+    adminOnly: true,
   },
   {
     href: "/sucursales",
     label: "Sucursales",
     icon: Store,
+    adminOnly: true,
   },
   {
     href: "/ventas",
     label: "Ventas",
     icon: ReceiptText,
+    adminOnly: true,
   },
   {
     href: "/pagos",
@@ -48,9 +52,39 @@ const navigation = [
     icon: Users,
     adminOnly: true,
   },
+  {
+    href: "/configuraciones",
+    label: "Configuraciones",
+    icon: Settings,
+    adminOnly: true,
+  },
 ];
 
-export default function DashboardShell({ user, profile, children }) {
+function BrandBlock({ collapsed, settings }) {
+  const logoUrl = settings?.logo?.url || "";
+
+  if (collapsed) {
+    return null;
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt="Logo POS"
+          className="size-10 shrink-0 rounded-md object-contain"
+        />
+      ) : null}
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-neutral-500 uppercase">POS V1</p>
+        <p className="truncate text-sm font-semibold">Backoffice</p>
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardShell({ user, profile, settings, children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
@@ -84,14 +118,7 @@ export default function DashboardShell({ user, profile, children }) {
         >
           <div className="flex h-full flex-col">
             <div className="flex h-16 items-center justify-between border-b border-neutral-800 px-4">
-              {!collapsed ? (
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 uppercase">
-                    POS V1
-                  </p>
-                  <p className="text-sm font-semibold">Backoffice</p>
-                </div>
-              ) : null}
+              <BrandBlock collapsed={collapsed} settings={settings} />
 
               <button
                 type="button"
@@ -170,12 +197,7 @@ export default function DashboardShell({ user, profile, children }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="border-b border-neutral-800 bg-neutral-950/95 lg:hidden">
             <div className="flex items-center justify-between px-4 py-4">
-              <div>
-                <p className="text-xs font-medium text-neutral-500 uppercase">
-                  POS V1
-                </p>
-                <p className="text-sm font-semibold">Backoffice</p>
-              </div>
+              <BrandBlock collapsed={false} settings={settings} />
               <button
                 type="button"
                 onClick={handleSignOut}

@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
-import { appwriteFunctions } from "@/lib/appwrite/functions";
-import { invokePosFunction } from "@/lib/appwrite/function-proxy";
-import { getApiErrorResponse } from "@/lib/pos/auth";
+import { getApiErrorResponse, getCurrentUserContext } from "@/lib/pos/auth";
+import { deactivateBranch, updateBranch } from "@/lib/pos/management";
 
 export async function PATCH(request, { params }) {
   try {
     const { branchId } = await params;
     const input = await request.json();
-    const { body, status } = await invokePosFunction(
-      request,
-      appwriteFunctions.management.branchesUpdate,
-      { branchId, input },
-    );
+    const context = await getCurrentUserContext({ redirectToLogin: false });
+    const branch = await updateBranch(context, branchId, input);
 
-    return NextResponse.json(body, { status });
+    return NextResponse.json({ branch });
   } catch (error) {
     return getApiErrorResponse(error);
   }
@@ -22,13 +18,10 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const { branchId } = await params;
-    const { body, status } = await invokePosFunction(
-      request,
-      appwriteFunctions.management.branchesDelete,
-      { branchId },
-    );
+    const context = await getCurrentUserContext({ redirectToLogin: false });
+    const branch = await deactivateBranch(context, branchId);
 
-    return NextResponse.json(body, { status });
+    return NextResponse.json({ branch });
   } catch (error) {
     return getApiErrorResponse(error);
   }

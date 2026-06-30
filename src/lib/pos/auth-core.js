@@ -112,34 +112,33 @@ export async function getCurrentUserContextFromSession({
     throw new UnauthorizedError();
   }
 
+  let accountUser;
+
   try {
     const account = createSessionAccount(sessionSecret, userAgent);
-    const accountUser = await account.get();
-    const publicUser = toPublicUser(accountUser);
-    const { databases } = createAdminClient(userAgent);
-    const profile = await getOrCreateProfile(databases, publicUser);
-
-    if (!profile.isActive) {
-      throw new ForbiddenError("Tu usuario esta inactivo.");
-    }
-
-    return {
-      user: publicUser,
-      profile,
-      userAgent,
-      isAdmin: profile.role === "admin",
-      canManageCatalog: profile.role === "admin",
-      canManagePayments: profile.role === "admin",
-      canManageUsers: profile.role === "admin",
-      allowedBranchIds: profile.allowedBranchIds,
-    };
-  } catch (error) {
-    if (error instanceof ForbiddenError) {
-      throw error;
-    }
-
-    throw new UnauthorizedError();
+    accountUser = await account.get();
+  } catch {
+    throw new UnauthorizedError("Sesion expirada. Vuelve a iniciar sesion.");
   }
+
+  const publicUser = toPublicUser(accountUser);
+  const { databases } = createAdminClient(userAgent);
+  const profile = await getOrCreateProfile(databases, publicUser);
+
+  if (!profile.isActive) {
+    throw new ForbiddenError("Tu usuario esta inactivo.");
+  }
+
+  return {
+    user: publicUser,
+    profile,
+    userAgent,
+    isAdmin: profile.role === "admin",
+    canManageCatalog: profile.role === "admin",
+    canManagePayments: profile.role === "admin",
+    canManageUsers: profile.role === "admin",
+    allowedBranchIds: profile.allowedBranchIds,
+  };
 }
 
 export function assertCanManageCatalog(context) {

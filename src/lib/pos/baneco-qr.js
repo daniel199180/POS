@@ -8,10 +8,14 @@ import {
   getBanecoQrStatus,
   warmBanecoCredentials,
 } from "./baneco.js";
-import { decryptCredentials, encryptCredentials } from "./payments.js";
+import {
+  decryptCredentialsWithRotation,
+  encryptCredentials,
+} from "./payments.js";
 
 const { databaseId, collections } = appwriteConfig;
 const QR_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const CUSTOM_PRODUCT_ID_PREFIX = "custom-";
 
 function text(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
@@ -72,6 +76,24 @@ function getBanecoConfig(value) {
     singleUse: true,
     modifyAmount: false,
     descriptionPrefix: text(config.descriptionPrefix, "POS V1").slice(0, 80),
+  };
+}
+
+function getQrAuthorizedCashier(context) {
+  const name =
+    text(context.profile?.name) ||
+    text(context.user?.name) ||
+    text(context.user?.email);
+
+  return {
+    userId: text(context.user?.id),
+    name,
+    email: text(context.user?.email),
+    profileId: text(context.profile?.id),
+    profileRole: context.profile?.role === "admin" ? "admin" : "cashier",
+    allowedBranchIds: Array.isArray(context.allowedBranchIds)
+      ? context.allowedBranchIds.filter(Boolean)
+      : [],
   };
 }
 
@@ -168,6 +190,10 @@ function assertQrPaymentToken(input, expected = {}) {
   return tokenPayload;
 }
 
+export function getPosBanecoQrPaymentTokenPayload(input = {}, expected = {}) {
+  return assertQrPaymentToken(input, expected);
+}
+
 function assertQrPaidToken(input, expected = {}) {
   const paidPayload = verifyQrPaymentToken(input.paidToken);
   const expectedAmount = roundMoney(expected.amount);
@@ -188,19 +214,14 @@ function assertQrPaidToken(input, expected = {}) {
     expected.paymentMethodId &&
     paidPayload.paymentMethodId !== expected.paymentMethodId
   ) {
-    throw inputError(
-      "La confirmacion QR no corresponde al metodo de pago.",
-    );
+    throw inputError("La confirmacion QR no corresponde al metodo de pago.");
   }
 
   if (expected.qrId && paidPayload.qrId !== expected.qrId) {
     throw inputError("La confirmacion QR no corresponde al QR generado.");
   }
 
-  if (
-    expectedAmount > 0 &&
-    roundMoney(paidPayload.amount) !== expectedAmount
-  ) {
+  if (expectedAmount > 0 && roundMoney(paidPayload.amount) !== expectedAmount) {
     throw inputError("La confirmacion QR no coincide con el total.");
   }
 
@@ -217,6 +238,8 @@ function sanitizeSaleItems(items) {
   for (const item of items) {
     const productId = text(item.productId || item.id);
     const quantity = number(item.quantity, 0);
+    const isCustom =
+      item.isCustom === true || productId.startsWith(CUSTOM_PRODUCT_ID_PREFIX);
 
     if (!productId || quantity <= 0) {
       throw inputError(
@@ -224,10 +247,30 @@ function sanitizeSaleItems(items) {
       );
     }
 
+    if (isCustom) {
+      const name = text(item.name).slice(0, 200);
+      const unitPrice = roundMoney(item.unitPrice || item.price);
+
+      if (!name || unitPrice <= 0) {
+        throw inputError(
+          "Los cobros personalizados deben tener nombre y precio valido.",
+        );
+      }
+
+      itemsByProduct.set(productId.slice(0, 36), {
+        productId: productId.slice(0, 36),
+        quantity,
+        unitPrice,
+        isCustom: true,
+      });
+      continue;
+    }
+
     const currentQuantity = itemsByProduct.get(productId)?.quantity || 0;
     itemsByProduct.set(productId, {
       productId,
       quantity: currentQuantity + quantity,
+      isCustom: false,
     });
   }
 
@@ -250,8 +293,28 @@ async function getStockDocument(databases, productId, branchId) {
 
 async function calculateCartTotal(databases, branchId, items) {
   const rawItems = sanitizeSaleItems(items);
-  const productIds = rawItems.map((item) => item.productId);
+  const customItems = rawItems.filter((item) => item.isCustom);
+  const productItems = rawItems.filter((item) => !item.isCustom);
+  const productIds = productItems.map((item) => item.productId);
   const saleItems = [];
+
+  for (const item of customItems) {
+    saleItems.push({
+      productId: item.productId,
+      quantity: item.quantity,
+      subtotal: roundMoney(item.unitPrice * item.quantity),
+    });
+  }
+
+  if (productIds.length === 0) {
+    return {
+      total: roundMoney(
+        saleItems.reduce((sum, item) => sum + item.subtotal, 0),
+      ),
+      itemCount: saleItems.reduce((sum, item) => sum + item.quantity, 0),
+    };
+  }
+
   const [productsResult, stocksResult] = await Promise.all([
     databases.listDocuments({
       databaseId,
@@ -275,7 +338,7 @@ async function calculateCartTotal(databases, branchId, items) {
     stocksResult.documents.map((stock) => [stock.productId, stock]),
   );
 
-  for (const rawItem of rawItems) {
+  for (const rawItem of productItems) {
     const product = productsById.get(rawItem.productId);
     const stock = stockByProductId.get(rawItem.productId);
 
@@ -360,13 +423,18 @@ async function getBanecoPaymentContext(context, input) {
     throw inputError("Configura las credenciales Baneco de esta sucursal.");
   }
 
+  const decryptedCredentials = decryptCredentialsWithRotation(
+    credentialDocument.encryptedPayload,
+  );
+
   return {
     databases,
     branch,
     paymentMethod,
     credentialDocument,
     config: getBanecoConfig(methodConfig),
-    credentials: decryptCredentials(credentialDocument.encryptedPayload),
+    credentials: decryptedCredentials.credentials,
+    credentialsNeedRotation: decryptedCredentials.needsRotation,
   };
 }
 
@@ -397,11 +465,12 @@ async function warmPaymentContextCredentials({
   credentialDocument,
   config,
   credentials,
+  credentialsNeedRotation = false,
 }) {
   const wasPrepared = hasPreparedBanecoCredentials(credentials);
   const preparedCredentials = await warmBanecoCredentials(credentials, config);
 
-  if (!wasPrepared) {
+  if (!wasPrepared || credentialsNeedRotation) {
     await persistPreparedBanecoCredentials(
       databases,
       credentialDocument,
@@ -490,14 +559,15 @@ export async function generatePosBanecoQr(context, input = {}) {
     credentialDocument,
     config,
     credentials,
-  } =
-    await getBanecoPaymentContext(context, input);
+    credentialsNeedRotation,
+  } = await getBanecoPaymentContext(context, input);
   const [preparedCredentials, cart] = await Promise.all([
     warmPaymentContextCredentials({
       databases,
       credentialDocument,
       config,
       credentials,
+      credentialsNeedRotation,
     }),
     calculateCartTotal(databases, branch.$id, input.items),
   ]);
@@ -530,12 +600,14 @@ export async function generatePosBanecoQr(context, input = {}) {
     message: qr.message,
     generatedAt: new Date().toISOString(),
     paymentToken: signQrPaymentPayload({
+      tokenType: "baneco-qr-payment",
       branchId: branch.$id,
       paymentMethodId: paymentMethod.$id,
       amount: cart.total,
       currency: "BOB",
       qrId: qr.qrId,
       transactionId,
+      cashier: getQrAuthorizedCashier(context),
       generatedAt: new Date().toISOString(),
     }),
   };

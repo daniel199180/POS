@@ -1,8 +1,8 @@
 /**
  * Bootstrap idempotente de la base de datos POS en Appwrite.
  *
- * Crea la database `APPWRITE_DATABASE_ID`, sus 9 colecciones, atributos e
- * indices segun el esquema del proyecto. El script se puede ejecutar varias
+ * Crea la database `APPWRITE_DATABASE_ID`, sus colecciones, atributos,
+ * indices y el bucket de imagenes segun el esquema del proyecto. El script se puede ejecutar varias
  * veces: si un recurso ya existe, lo salta sin duplicarlo.
  *
  * Uso:
@@ -25,6 +25,7 @@ import {
   IndexType,
   Permission,
   Role,
+  Storage,
 } from "node-appwrite";
 
 dotenv.config({ path: ".env" });
@@ -40,6 +41,12 @@ const REQUIRED_ENV = [
 const ATTRIBUTE_TIMEOUT_MS = 60_000;
 const ATTRIBUTE_POLL_MS = 1_500;
 const OPERATION_DELAY_MS = 250;
+const STORAGE_BUCKET_ID =
+  process.env.NEXT_PUBLIC_APPWRITE_STORAGE_BUCKET ||
+  process.env.APPWRITE_STORAGE_BUCKET ||
+  "pos_images";
+const STORAGE_LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const STORAGE_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp"];
 
 const stats = {
   created: 0,
@@ -471,6 +478,43 @@ async function ensureDatabase(databases, databaseId) {
   }
 }
 
+async function ensureStorageBucket(storage, bucketId) {
+  try {
+    await storage.getBucket({ bucketId });
+    logSkipped(`bucket ${bucketId}`);
+    return;
+  } catch (error) {
+    if (!isNotFound(error)) {
+      logError(`bucket ${bucketId}`, error);
+      throw error;
+    }
+  }
+
+  try {
+    await storage.createBucket({
+      bucketId,
+      name: "POS Images",
+      permissions: [Permission.read(Role.users())],
+      fileSecurity: true,
+      enabled: true,
+      maximumFileSize: STORAGE_LOGO_MAX_SIZE_BYTES,
+      allowedFileExtensions: STORAGE_IMAGE_EXTENSIONS,
+      encryption: true,
+      antivirus: true,
+    });
+    logCreated(`bucket ${bucketId}`);
+    await sleep(OPERATION_DELAY_MS);
+  } catch (error) {
+    if (isConflict(error)) {
+      logSkipped(`bucket ${bucketId}`);
+      return;
+    }
+
+    logError(`bucket ${bucketId}`, error);
+    throw error;
+  }
+}
+
 async function ensureCollection(databases, databaseId, collection) {
   try {
     const existing = await databases.getCollection({
@@ -722,6 +766,7 @@ async function main() {
   const databaseId = process.env.APPWRITE_DATABASE_ID;
   const client = getClient();
   const databases = new Databases(client);
+  const storage = new Storage(client);
 
   console.log("POS Appwrite database setup");
   console.log(`Endpoint: ${process.env.APPWRITE_ENDPOINT}`);
@@ -733,6 +778,7 @@ async function main() {
   );
 
   await ensureDatabase(databases, databaseId);
+  await ensureStorageBucket(storage, STORAGE_BUCKET_ID);
 
   for (const collection of collections) {
     await setupCollection(databases, databaseId, collection);

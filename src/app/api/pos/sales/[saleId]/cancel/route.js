@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
-import { appwriteFunctions } from "@/lib/appwrite/functions";
-import { invokePosFunction } from "@/lib/appwrite/function-proxy";
-import { getApiErrorResponse } from "@/lib/pos/auth";
+import { getApiErrorResponse, getCurrentUserContext } from "@/lib/pos/auth";
+import { cancelSale } from "@/lib/pos/sales";
 
 export async function POST(request, { params }) {
   try {
     const { saleId } = await params;
     const input = await request.json().catch(() => ({}));
-    const { body, status } = await invokePosFunction(
-      request,
-      appwriteFunctions.sales.cancel,
-      { saleId, input },
-    );
+    const context = await getCurrentUserContext({ redirectToLogin: false });
+    const sale = await cancelSale(context, saleId, input);
 
-    return NextResponse.json(body, { status });
+    return NextResponse.json({ sale });
   } catch (error) {
     return getApiErrorResponse(error);
   }

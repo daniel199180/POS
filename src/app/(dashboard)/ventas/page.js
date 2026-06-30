@@ -1,4 +1,5 @@
 import SalesClient from "./sales-client";
+import { redirect } from "next/navigation";
 import { getCurrentUserContext } from "@/lib/pos/auth";
 import {
   getDefaultSalesDate,
@@ -8,6 +9,11 @@ import {
 
 export default async function SalesPage() {
   const context = await getCurrentUserContext();
+
+  if (!context.isAdmin) {
+    redirect("/");
+  }
+
   const today = getDefaultSalesDate();
   const initialFilters = {
     dateFrom: today,
