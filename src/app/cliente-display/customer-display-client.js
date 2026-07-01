@@ -390,7 +390,13 @@ export default function CustomerDisplayClient({ initialSessionId }) {
         src="/sounds/payment-success.mp3"
         preload="auto"
       />
-      <section className="grid h-full min-h-0 grid-cols-2 gap-4">
+      <section
+        className={`grid h-full min-h-0 gap-4 ${
+          isQrPayment
+            ? "grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]"
+            : "grid-cols-2"
+        }`}
+      >
         <div className="flex min-h-0 flex-col rounded-md border border-neutral-800 bg-neutral-950">
           <div className="flex shrink-0 items-center justify-between gap-4 border-b border-neutral-800 px-5 py-4">
             <div className="min-w-0">
@@ -474,31 +480,21 @@ export default function CustomerDisplayClient({ initialSessionId }) {
           </div>
         </div>
 
-        <aside className="flex min-h-0 flex-col rounded-md border border-neutral-800 bg-neutral-900 p-5">
-          <div className="mx-auto flex aspect-square w-[min(100%,calc(100vh-230px))] shrink-0 flex-col rounded-md border border-neutral-800 bg-neutral-950 p-4">
+        <aside
+          className={`flex min-h-0 flex-col rounded-md border border-neutral-800 bg-neutral-900 ${
+            isQrPayment ? "justify-center p-4" : "p-5"
+          }`}
+        >
+          <div
+            className={`mx-auto flex aspect-square shrink-0 flex-col rounded-md border border-neutral-800 bg-neutral-950 ${
+              isQrPayment
+                ? "w-[min(100%,calc(100vh-72px))] p-3"
+                : "w-[min(100%,calc(100vh-230px))] p-4"
+            }`}
+          >
             {isQrPayment ? (
               <>
-                <div className="flex shrink-0 items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium text-neutral-500 uppercase">
-                      QR simple
-                    </p>
-                    <p className="mt-1 text-sm font-semibold">
-                      {snapshot.qr?.status === "paid"
-                        ? "Pago confirmado"
-                        : snapshot.qr
-                          ? "Escanea para pagar"
-                          : "Esperando QR"}
-                    </p>
-                  </div>
-                  {snapshot.qr?.status === "paid" ? (
-                    <CircleCheck className="size-6 text-emerald-300" />
-                  ) : (
-                    <QrCode className="size-6 text-neutral-500" />
-                  )}
-                </div>
-
-                <div className="relative mt-4 grid min-h-0 flex-1 place-items-center rounded-md bg-white p-3">
+                <div className="relative grid min-h-0 flex-1 place-items-center rounded-md bg-white p-2">
                   {snapshot.qr && qrImageSrc ? (
                     <>
                       <img
@@ -507,7 +503,7 @@ export default function CustomerDisplayClient({ initialSessionId }) {
                         className="max-h-full max-w-full object-contain"
                       />
                       {qrLogoUrl ? (
-                        <div className="pointer-events-none absolute top-1/2 left-1/2 grid aspect-square h-[10%] max-h-12 min-h-8 w-[10%] max-w-12 min-w-8 -translate-x-1/2 -translate-y-1/2 place-items-center overflow-hidden rounded-full bg-white p-0.5 shadow-sm ring-2 ring-white">
+                        <div className="pointer-events-none absolute top-1/2 left-1/2 grid aspect-square h-[11%] min-h-8 w-[11%] min-w-8 -translate-x-1/2 -translate-y-1/2 place-items-center overflow-hidden rounded-full bg-white p-0.5 shadow-sm ring-2 ring-white">
                           <img
                             src={qrLogoUrl}
                             alt=""
@@ -569,14 +565,16 @@ export default function CustomerDisplayClient({ initialSessionId }) {
             )}
           </div>
 
-          <div className="mt-4 flex min-h-0 flex-1 flex-col justify-center rounded-md border border-neutral-800 bg-neutral-950 p-5">
-            <p className="text-xs font-medium text-neutral-500 uppercase">
-              Total a pagar
-            </p>
-            <p className="mt-2 text-5xl font-semibold tracking-normal">
-              {money(snapshot.totals.total)}
-            </p>
-          </div>
+          {!isQrPayment ? (
+            <div className="mt-4 flex min-h-0 flex-1 flex-col justify-center rounded-md border border-neutral-800 bg-neutral-950 p-5">
+              <p className="text-xs font-medium text-neutral-500 uppercase">
+                Total a pagar
+              </p>
+              <p className="mt-2 text-5xl font-semibold tracking-normal">
+                {money(snapshot.totals.total)}
+              </p>
+            </div>
+          ) : null}
         </aside>
       </section>
     </main>
