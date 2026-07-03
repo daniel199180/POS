@@ -924,6 +924,12 @@ export default function DashboardClient({
     publishCustomerDisplayResetSnapshot();
   }
 
+  function isActiveQrPayment(payment) {
+    return Boolean(
+      payment?.qrId && qrPaymentRef.current?.qrId === payment.qrId,
+    );
+  }
+
   function openCustomerDisplay() {
     if (!displaySessionId) {
       return;
@@ -1092,6 +1098,10 @@ export default function DashboardClient({
         throw new Error(payload.message || "No se pudo consultar el QR.");
       }
 
+      if (!isActiveQrPayment(currentQrPayment)) {
+        return;
+      }
+
       const nextQrPayment = currentQrPayment
         ? {
             ...currentQrPayment,
@@ -1168,13 +1178,63 @@ export default function DashboardClient({
       }
     } catch (error) {
       qrAutoRegisterInFlightRef.current = false;
-      setIsQrPanelOpen(true);
-      if (!silent) {
+      if (isActiveQrPayment(currentQrPayment)) {
+        setIsQrPanelOpen(true);
+      }
+      if (!silent && isActiveQrPayment(currentQrPayment)) {
         setSaleError(error.message || "No se pudo consultar el QR.");
       }
     } finally {
       qrCheckInFlightRef.current = false;
       setIsCheckingQr(false);
+    }
+  }
+
+  async function cancelQrPayment() {
+    const currentQrPayment = qrPaymentRef.current;
+
+    qrPaymentRef.current = null;
+    qrAutoRegisterInFlightRef.current = false;
+    setQrPayment(null);
+    setIsQrPanelOpen(false);
+    setSaleError("");
+    setSaleMessage("Pago QR cancelado. El carrito se conserva.");
+
+    if (!currentQrPayment || !selectedPayment) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/pos/baneco-qr/cancel", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          branchId: selectedBranchId,
+          paymentMethodId: selectedPayment.id,
+          qrId: currentQrPayment.qrId,
+          paymentToken: currentQrPayment.paymentToken,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          payload.message ||
+            "No se pudo cancelar el QR en Baneco. Genera un QR nuevo antes de cobrar.",
+        );
+      }
+    } catch (error) {
+      if (!qrPaymentRef.current) {
+        qrPaymentRef.current = currentQrPayment;
+        setQrPayment(currentQrPayment);
+        setIsQrPanelOpen(false);
+        setSaleMessage("");
+        setSaleError(
+          error.message ||
+            "No se pudo cancelar el QR en Baneco. Genera un QR nuevo antes de cobrar.",
+        );
+      }
     }
   }
 
@@ -1946,6 +2006,15 @@ export default function DashboardClient({
                   <p className="mt-3 text-center text-xs text-neutral-500">
                     El QR se mantiene visible hasta que Baneco confirme el pago.
                   </p>
+                  <button
+                    type="button"
+                    onClick={cancelQrPayment}
+                    disabled={isCharging}
+                    className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-red-900 bg-red-950 text-sm font-semibold text-red-100 transition hover:border-red-500 hover:bg-red-900 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900 disabled:text-neutral-500"
+                  >
+                    <X className="size-4" />
+                    Cancelar pago QR
+                  </button>
                 </div>
               </>
             )}

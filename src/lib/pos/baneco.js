@@ -445,17 +445,21 @@ async function getEncryptedPassword(credentials, config = {}) {
     return cachedPassword;
   }
 
-  return withInFlightCache(encryptedPasswordPromiseCache, cacheKey, async () => {
-    const encryptedPassword = await banecoEncrypt(
-      credentials,
-      config,
-      credentials.apiPassword,
-      "encrypt",
-    );
-    encryptedPasswordCache.set(cacheKey, encryptedPassword);
+  return withInFlightCache(
+    encryptedPasswordPromiseCache,
+    cacheKey,
+    async () => {
+      const encryptedPassword = await banecoEncrypt(
+        credentials,
+        config,
+        credentials.apiPassword,
+        "encrypt",
+      );
+      encryptedPasswordCache.set(cacheKey, encryptedPassword);
 
-    return encryptedPassword;
-  });
+      return encryptedPassword;
+    },
+  );
 }
 
 async function getEncryptedAccountCredit(credentials, config = {}) {
@@ -580,6 +584,28 @@ export async function generateBanecoQr({
     qrImage,
     responseCode: getResponseCode(response.payload),
     message: getResponseMessage(response.payload, "QR generado."),
+  };
+}
+
+export async function cancelBanecoQr({ config = {}, credentials, qrId }) {
+  const token = await authenticateBaneco(credentials, config);
+  const response = await requestBaneco(banecoQrDefaults.cancelQrPath, {
+    config,
+    method: "POST",
+    token,
+    body: { qrId },
+  });
+
+  assertBanecoSuccess(
+    response.payload,
+    "Baneco rechazo la cancelacion del QR.",
+  );
+
+  return {
+    status: "cancelled",
+    statusCode: 9,
+    responseCode: getResponseCode(response.payload),
+    message: getResponseMessage(response.payload, "QR cancelado."),
   };
 }
 

@@ -4,6 +4,7 @@ import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
 import {
+  cancelBanecoQr,
   generateBanecoQr,
   getBanecoQrStatus,
   warmBanecoCredentials,
@@ -679,6 +680,38 @@ export async function checkPosBanecoQrStatus(context, input = {}) {
   }
 
   return result;
+}
+
+export async function cancelPosBanecoQr(context, input = {}) {
+  const qrId = text(input.qrId);
+
+  if (!qrId) {
+    throw inputError("El QR de Baneco es obligatorio.");
+  }
+
+  const tokenPayload = assertQrPaymentToken(input, {
+    branchId: text(input.branchId),
+    paymentMethodId: text(input.paymentMethodId),
+    qrId,
+  });
+  const { branch, paymentMethod, config, credentials } =
+    await getBanecoPaymentContext(context, input);
+  const cancelled = await cancelBanecoQr({
+    config,
+    credentials,
+    qrId,
+  });
+
+  return {
+    branchId: branch.$id,
+    paymentMethodId: paymentMethod.$id,
+    qrId,
+    transactionId: tokenPayload.transactionId || "",
+    status: "cancelled",
+    statusCode: cancelled.statusCode || 9,
+    message: cancelled.message,
+    cancelledAt: new Date().toISOString(),
+  };
 }
 
 export async function assertPosBanecoQrPaid(context, input = {}) {
