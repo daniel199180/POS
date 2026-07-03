@@ -589,12 +589,14 @@ export async function generateBanecoQr({
 
 export async function cancelBanecoQr({ config = {}, credentials, qrId }) {
   const token = await authenticateBaneco(credentials, config);
-  const response = await requestBaneco(banecoQrDefaults.cancelQrPath, {
-    config,
-    method: "POST",
-    token,
-    body: { qrId },
-  });
+  const response = await requestBanecoGetWithBody(
+    banecoQrDefaults.cancelQrPath,
+    {
+      config,
+      token,
+      body: { qrId },
+    },
+  );
 
   assertBanecoSuccess(
     response.payload,
