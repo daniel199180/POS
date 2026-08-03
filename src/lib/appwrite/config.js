@@ -26,6 +26,8 @@ export const appwriteConfig = {
     stock: process.env.NEXT_PUBLIC_COL_STOCK || "stock",
     stockMovements:
       process.env.NEXT_PUBLIC_COL_STOCK_MOVEMENTS || "stock_movements",
+    inventoryGrants:
+      process.env.NEXT_PUBLIC_COL_INVENTORY_GRANTS || "inventory_grants",
     sales: process.env.NEXT_PUBLIC_COL_SALES || "sales",
     saleItems: process.env.NEXT_PUBLIC_COL_SALE_ITEMS || "sale_items",
   },

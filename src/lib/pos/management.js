@@ -130,6 +130,10 @@ function filterProductsForContext(products, context) {
     return products;
   }
 
+  if (context.canIncreaseInventory) {
+    return products.filter((product) => product.isActive);
+  }
+
   return products.filter(
     (product) =>
       product.isActive &&

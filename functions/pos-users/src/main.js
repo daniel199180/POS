@@ -4,6 +4,7 @@ import {
   deactivateManagedUser,
   listManagedUsers,
   updateManagedUser,
+  updateManagedUserInventoryPermission,
 } from "../../../src/lib/pos/users.js";
 import {
   getFunctionRequest,
@@ -36,6 +37,15 @@ export default async ({ req, res }) => {
 
     if (functionId === appwriteFunctions.users.delete) {
       const user = await deactivateManagedUser(context, body.profileId);
+      return sendJson(res, { user });
+    }
+
+    if (functionId === appwriteFunctions.users.inventoryPermissionUpdate) {
+      const user = await updateManagedUserInventoryPermission(
+        context,
+        body.profileId,
+        body.input || {},
+      );
       return sendJson(res, { user });
     }
 

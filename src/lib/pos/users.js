@@ -2,6 +2,12 @@ import { ID, Permission, Query, Role } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { assertCanManageUsers } from "./auth-core.js";
+import {
+  createInventoryGrant,
+  getActiveInventoryGrantMap,
+  revokeInventoryGrants,
+  syncInventoryGrantBranches,
+} from "./inventory.js";
 
 const { databaseId, collections } = appwriteConfig;
 const documentPermissions = [Permission.read(Role.users())];
@@ -48,9 +54,20 @@ function toUserProfile(document) {
           ? [branchId]
           : [],
     isActive: document.isActive !== false,
+    canIncreaseInventory: false,
     createdByUserId: document.createdByUserId || "",
     lastLoginAt: document.lastLoginAt || "",
   };
+}
+
+async function withInventoryGrantStatus(databases, profiles) {
+  const grantByUserId = await getActiveInventoryGrantMap(databases);
+
+  return profiles.map((profile) => ({
+    ...profile,
+    canIncreaseInventory:
+      profile.role === "cashier" && grantByUserId.has(profile.userId),
+  }));
 }
 
 function matchesUserSearch(user, search) {
@@ -163,10 +180,12 @@ export async function listManagedUsers(context, { search = "" } = {}) {
     queries: [Query.limit(500)],
   });
 
-  return result.documents
+  const profiles = result.documents
     .map(toUserProfile)
     .filter((user) => matchesUserSearch(user, search))
     .sort((left, right) => left.name.localeCompare(right.name));
+
+  return withInventoryGrantStatus(databases, profiles);
 }
 
 export async function createManagedUser(context, input) {
@@ -196,7 +215,10 @@ export async function createManagedUser(context, input) {
       permissions: documentPermissions,
     });
 
-    return toUserProfile(document);
+    return {
+      ...toUserProfile(document),
+      canIncreaseInventory: false,
+    };
   } catch (error) {
     try {
       await users.delete({ userId: createdUser.$id });
@@ -266,7 +288,17 @@ export async function updateManagedUser(context, profileId, input) {
     data: profile,
   });
 
-  return toUserProfile(document);
+  const updatedProfile = toUserProfile(document);
+
+  if (profile.role === "cashier") {
+    await syncInventoryGrantBranches(databases, updatedProfile);
+  } else {
+    await revokeInventoryGrants(databases, context, currentProfile.userId);
+  }
+
+  const [updated] = await withInventoryGrantStatus(databases, [updatedProfile]);
+
+  return updated;
 }
 
 export async function deactivateManagedUser(context, profileId) {
@@ -293,5 +325,36 @@ export async function deactivateManagedUser(context, profileId) {
     data: { isActive: false },
   });
 
-  return toUserProfile(document);
+  await revokeInventoryGrants(databases, context, currentProfile.userId);
+
+  return {
+    ...toUserProfile(document),
+    canIncreaseInventory: false,
+  };
+}
+
+export async function updateManagedUserInventoryPermission(
+  context,
+  profileId,
+  input = {},
+) {
+  assertCanManageUsers(context);
+
+  const enabled =
+    typeof input.enabled === "boolean"
+      ? input.enabled
+      : Boolean(input.canIncreaseInventory);
+  const { databases } = createAdminClient(context.userAgent);
+  const currentDocument = await getProfileDocument(databases, profileId);
+  const currentProfile = toUserProfile(currentDocument);
+
+  if (enabled) {
+    await createInventoryGrant(databases, context, currentProfile, input);
+  } else {
+    await revokeInventoryGrants(databases, context, currentProfile.userId);
+  }
+
+  const [updated] = await withInventoryGrantStatus(databases, [currentProfile]);
+
+  return updated;
 }

@@ -1343,7 +1343,7 @@ export default function DashboardClient({
                 <input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  list="product-search-options"
+                  autoComplete="off"
                   placeholder="Buscar por SKU, codigo o nombre"
                   className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
                 />
@@ -1357,14 +1357,6 @@ export default function DashboardClient({
                     <X className="size-4" />
                   </button>
                 ) : null}
-                <datalist id="product-search-options">
-                  {products.map((product) => (
-                    <option
-                      key={product.id}
-                      value={`${product.sku} ${product.name}`}
-                    />
-                  ))}
-                </datalist>
               </div>
 
               <button
@@ -1646,7 +1638,15 @@ export default function DashboardClient({
               <p className="text-xs font-medium text-neutral-500 uppercase">
                 Metodo de pago
               </p>
-              <div className="mt-2 grid grid-cols-3 gap-2">
+              <div
+                className="mt-2 grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${Math.max(
+                    branchPaymentMethods.length,
+                    1,
+                  )}, minmax(0, 1fr))`,
+                }}
+              >
                 {branchPaymentMethods.map((method) => {
                   const Icon = paymentIcons[method.type] || CreditCard;
                   const isSelected = selectedPayment?.id === method.id;

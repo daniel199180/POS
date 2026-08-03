@@ -27,6 +27,7 @@ const navigation = [
     label: "Productos",
     icon: Package,
     adminOnly: true,
+    inventoryAccess: true,
   },
   {
     href: "/sucursales",
@@ -89,9 +90,13 @@ export default function DashboardShell({ user, profile, settings, children }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const visibleNavigation = navigation.filter(
-    (item) => !item.adminOnly || profile.role === "admin",
-  );
+  const visibleNavigation = navigation.filter((item) => {
+    if (!item.adminOnly || profile.role === "admin") {
+      return true;
+    }
+
+    return item.inventoryAccess && profile.canIncreaseInventory;
+  });
 
   useEffect(() => {
     setCollapsed(true);

@@ -1,9 +1,13 @@
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const MARGIN_X = 42;
-const FIRST_PAGE_ROWS = 22;
-const NEXT_PAGE_ROWS = 31;
-const ROW_HEIGHT = 18;
+const TABLE_WIDTH = 528;
+const TABLE_HEADER_HEIGHT = 20;
+const MIN_ROW_HEIGHT = 22;
+const PRODUCT_LINE_HEIGHT = 9;
+const FOOTER_TOP_Y = 58;
+const FIRST_PAGE_TABLE_TOP = 592;
+const NEXT_PAGE_TABLE_TOP = 658;
 
 function cleanText(value = "") {
   return String(value || "")
@@ -19,6 +23,52 @@ function truncateText(value, maxLength) {
   }
 
   return `${text.slice(0, Math.max(maxLength - 1, 0))}.`;
+}
+
+function wrapText(value, maxLength) {
+  const words = cleanText(value).split(" ").filter(Boolean);
+  const lines = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if (word.length > maxLength) {
+      if (currentLine) {
+        lines.push(currentLine);
+        currentLine = "";
+      }
+
+      for (let index = 0; index < word.length; index += maxLength) {
+        lines.push(word.slice(index, index + maxLength));
+      }
+
+      continue;
+    }
+
+    const nextLine = currentLine ? `${currentLine} ${word}` : word;
+
+    if (nextLine.length > maxLength) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = nextLine;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines.length > 0 ? lines : [""];
+}
+
+function formatQuantity(value) {
+  const quantity = Math.round((Number(value) || 0) * 100) / 100;
+
+  if (Number.isInteger(quantity)) {
+    return String(quantity);
+  }
+
+  return String(quantity).replace(".", ",");
 }
 
 function money(value) {
@@ -119,68 +169,109 @@ function addSummaryBox(lines, x, y, width, label, value) {
 }
 
 function addTableHeader(lines, topY) {
-  const headerHeight = 20;
-  const tableWidth = 528;
-  const y = topY - headerHeight;
+  const y = topY - TABLE_HEADER_HEIGHT;
 
-  addRect(lines, MARGIN_X, y, tableWidth, headerHeight, "0.9");
-  addRect(lines, MARGIN_X, y, tableWidth, headerHeight);
+  addRect(lines, MARGIN_X, y, TABLE_WIDTH, TABLE_HEADER_HEIGHT, "0.9");
+  addRect(lines, MARGIN_X, y, TABLE_WIDTH, TABLE_HEADER_HEIGHT);
   addText(lines, 46, y + 7, "Venta", 8);
-  addText(lines, 137, y + 7, "Hora", 8);
-  addText(lines, 188, y + 7, "Metodo", 8);
-  addText(lines, 268, y + 7, "Total", 8);
-  addText(lines, 344, y + 7, "Recibido", 8);
-  addText(lines, 421, y + 7, "Cambio", 8);
-  addText(lines, 494, y + 7, "Estado", 8);
+  addText(lines, 126, y + 7, "Hora", 8);
+  addText(lines, 166, y + 7, "Metodo", 8);
+  addText(lines, 224, y + 7, "Productos", 8);
+  addText(lines, 402, y + 7, "Total", 8);
+  addText(lines, 456, y + 7, "Recibido", 8);
+  addText(lines, 516, y + 7, "Cambio", 8);
 
   return y;
 }
 
-function addSaleRow(lines, sale, rowTop, index) {
-  const rowBottom = rowTop - ROW_HEIGHT;
+function saleItemSummary(sale) {
+  const items = Array.isArray(sale.items) ? sale.items : [];
+
+  if (items.length === 0) {
+    return "Sin detalle de productos";
+  }
+
+  return items
+    .map((item) => {
+      const quantity = formatQuantity(item.quantity);
+      const name = cleanText(item.productName || item.productSku || "Producto");
+
+      return `${quantity} x ${name}`;
+    })
+    .join("; ");
+}
+
+function getSaleProductLines(sale) {
+  return wrapText(saleItemSummary(sale), 36);
+}
+
+function getSaleRowHeight(productLines) {
+  return Math.max(
+    MIN_ROW_HEIGHT,
+    9 + productLines.length * PRODUCT_LINE_HEIGHT,
+  );
+}
+
+function addSaleRow(lines, row, rowTop) {
+  const { sale, productLines, rowHeight, index } = row;
+  const rowBottom = rowTop - rowHeight;
+  const textTop = rowTop - 13;
 
   if (index % 2 === 1) {
-    addRect(lines, MARGIN_X, rowBottom, 528, ROW_HEIGHT, "0.98");
+    addRect(lines, MARGIN_X, rowBottom, TABLE_WIDTH, rowHeight, "0.98");
   }
 
   addLine(lines, MARGIN_X, rowBottom, 570, rowBottom);
-  addText(lines, 46, rowBottom + 6, truncateText(sale.saleNumber, 16), 8);
-  addText(lines, 137, rowBottom + 6, formatTime(sale.completedAt), 8);
-  addText(
-    lines,
-    188,
-    rowBottom + 6,
-    truncateText(getPaymentLabel(sale), 13),
-    8,
-  );
-  addText(lines, 268, rowBottom + 6, money(sale.total), 8);
-  addText(lines, 344, rowBottom + 6, money(sale.amountPaid), 8);
-  addText(lines, 421, rowBottom + 6, money(sale.change), 8);
-  addText(lines, 494, rowBottom + 6, sale.status || "-", 8);
+  addText(lines, 46, textTop, truncateText(sale.saleNumber, 13), 8);
+  addText(lines, 126, textTop, formatTime(sale.completedAt), 8);
+  addText(lines, 166, textTop, truncateText(getPaymentLabel(sale), 10), 8);
+  productLines.forEach((line, lineIndex) => {
+    addText(lines, 224, textTop - lineIndex * PRODUCT_LINE_HEIGHT, line, 7);
+  });
+  addText(lines, 402, textTop, money(sale.total), 8);
+  addText(lines, 456, textTop, money(sale.amountPaid), 8);
+  addText(lines, 516, textTop, money(sale.change), 8);
 
   return rowBottom;
 }
 
-function chunkSales(sales) {
+function getTableTop(pageIndex) {
+  return pageIndex === 0 ? FIRST_PAGE_TABLE_TOP : NEXT_PAGE_TABLE_TOP;
+}
+
+function paginateSales(sales) {
   if (sales.length === 0) {
     return [[]];
   }
 
-  const chunks = [];
-  let cursor = 0;
+  const pages = [];
+  let pageIndex = 0;
+  let rowTop = getTableTop(pageIndex) - TABLE_HEADER_HEIGHT;
+  let currentPage = [];
 
-  chunks.push(sales.slice(cursor, cursor + FIRST_PAGE_ROWS));
-  cursor += FIRST_PAGE_ROWS;
+  sales.forEach((sale, index) => {
+    const productLines = getSaleProductLines(sale);
+    const rowHeight = getSaleRowHeight(productLines);
 
-  while (cursor < sales.length) {
-    chunks.push(sales.slice(cursor, cursor + NEXT_PAGE_ROWS));
-    cursor += NEXT_PAGE_ROWS;
+    if (currentPage.length > 0 && rowTop - rowHeight < FOOTER_TOP_Y) {
+      pages.push(currentPage);
+      pageIndex += 1;
+      rowTop = getTableTop(pageIndex) - TABLE_HEADER_HEIGHT;
+      currentPage = [];
+    }
+
+    currentPage.push({ sale, productLines, rowHeight, index });
+    rowTop -= rowHeight;
+  });
+
+  if (currentPage.length > 0) {
+    pages.push(currentPage);
   }
 
-  return chunks;
+  return pages;
 }
 
-function buildPageContent(report, pageSales, pageIndex, pageCount) {
+function buildPageContent(report, pageRows, pageIndex, pageCount) {
   const lines = ["0 g", "0.75 w"];
   const isFirstPage = pageIndex === 0;
   const summary = report.summary || {};
@@ -206,14 +297,14 @@ function buildPageContent(report, pageSales, pageIndex, pageCount) {
     8,
   );
 
-  let tableTop = 658;
+  let tableTop = NEXT_PAGE_TABLE_TOP;
 
   if (isFirstPage) {
     addSummaryBox(lines, 42, 628, 122, "Efectivo", money(paymentTotals.cash));
     addSummaryBox(lines, 174, 628, 122, "QR", money(paymentTotals.qr));
     addSummaryBox(lines, 306, 628, 122, "Total", money(summary.total));
     addSummaryBox(lines, 438, 628, 122, "Ventas", String(summary.count || 0));
-    tableTop = 592;
+    tableTop = FIRST_PAGE_TABLE_TOP;
   }
 
   if (report.isLimited) {
@@ -228,7 +319,7 @@ function buildPageContent(report, pageSales, pageIndex, pageCount) {
 
   let rowTop = addTableHeader(lines, tableTop);
 
-  if (pageSales.length === 0) {
+  if (pageRows.length === 0) {
     addText(
       lines,
       MARGIN_X,
@@ -237,8 +328,8 @@ function buildPageContent(report, pageSales, pageIndex, pageCount) {
       10,
     );
   } else {
-    pageSales.forEach((sale, index) => {
-      rowTop = addSaleRow(lines, sale, rowTop, index);
+    pageRows.forEach((row) => {
+      rowTop = addSaleRow(lines, row, rowTop);
     });
   }
 
@@ -292,9 +383,9 @@ function createPdf(pageContents) {
 
 export function buildDailyIncomePdf(report) {
   const sales = Array.isArray(report.sales) ? report.sales : [];
-  const chunks = chunkSales(sales);
-  const pageContents = chunks.map((pageSales, index) =>
-    buildPageContent(report, pageSales, index, chunks.length),
+  const pages = paginateSales(sales);
+  const pageContents = pages.map((pageRows, index) =>
+    buildPageContent(report, pageRows, index, pages.length),
   );
 
   return createPdf(pageContents);

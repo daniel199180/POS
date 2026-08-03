@@ -199,6 +199,17 @@ const definitions = [
     entrypoint: "functions/pos-management/src/main.js",
   }),
   defineFunction({
+    functionId: appwriteFunctions.management.inventoryIncrease,
+    name: "POS - Increase Inventory",
+    entrypoint: "functions/pos-management/src/main.js",
+  }),
+  defineFunction({
+    functionId: appwriteFunctions.management.inventoryMovementsList,
+    name: "POS - List Inventory Movements",
+    entrypoint: "functions/pos-management/src/main.js",
+    scopes: readScopes,
+  }),
+  defineFunction({
     functionId: appwriteFunctions.users.list,
     name: "POS - List Users",
     entrypoint: "functions/pos-users/src/main.js",
@@ -221,6 +232,12 @@ const definitions = [
     name: "POS - Deactivate User",
     entrypoint: "functions/pos-users/src/main.js",
     scopes: userWriteScopes,
+  }),
+  defineFunction({
+    functionId: appwriteFunctions.users.inventoryPermissionUpdate,
+    name: "POS - Update Inventory Permission",
+    entrypoint: "functions/pos-users/src/main.js",
+    scopes: writeScopes,
   }),
 ];
 

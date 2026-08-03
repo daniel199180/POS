@@ -47,6 +47,10 @@ const STORAGE_BUCKET_ID =
   "pos_images";
 const STORAGE_LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024;
 const STORAGE_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp"];
+const PRIVATE_COLLECTION_IDS = new Set([
+  "branch_payment_credentials",
+  "inventory_grants",
+]);
 
 const stats = {
   created: 0,
@@ -113,7 +117,7 @@ function requiredDefaultNote(attribute) {
 }
 
 function collectionPermissions(collectionId) {
-  if (collectionId === "branch_payment_credentials") {
+  if (PRIVATE_COLLECTION_IDS.has(collectionId)) {
     return [];
   }
 
@@ -327,11 +331,55 @@ const collections = [
       { type: "string", key: "reason", size: 200, required: false },
       { type: "string", key: "saleId", size: 36, required: false },
       { type: "string", key: "userId", size: 36, required: true },
+      { type: "string", key: "profileId", size: 36, required: false },
+      { type: "string", key: "grantId", size: 36, required: false },
     ],
     indexes: [
       { key: "idx_productId", type: "key", attributes: ["productId"] },
       { key: "idx_branchId", type: "key", attributes: ["branchId"] },
       { key: "idx_saleId", type: "key", attributes: ["saleId"] },
+      { key: "idx_userId", type: "key", attributes: ["userId"] },
+      { key: "idx_grantId", type: "key", attributes: ["grantId"] },
+      {
+        key: "idx_createdAt",
+        type: "key",
+        attributes: ["$createdAt"],
+        orders: ["DESC"],
+      },
+    ],
+  },
+  {
+    id: "inventory_grants",
+    name: "Inventory Grants",
+    attributes: [
+      { type: "string", key: "profileId", size: 36, required: true },
+      { type: "string", key: "userId", size: 36, required: true },
+      {
+        type: "enum",
+        key: "permission",
+        elements: ["stock_increase"],
+        required: true,
+        default: "stock_increase",
+      },
+      {
+        type: "string",
+        key: "branchIds",
+        size: 36,
+        required: true,
+        array: true,
+      },
+      { type: "boolean", key: "isActive", required: true, default: true },
+      { type: "string", key: "grantedByUserId", size: 36, required: true },
+      { type: "string", key: "revokedByUserId", size: 36, required: false },
+      { type: "datetime", key: "revokedAt", required: false },
+      { type: "datetime", key: "expiresAt", required: false },
+      { type: "string", key: "reason", size: 200, required: false },
+    ],
+    indexes: [
+      { key: "idx_profileId", type: "key", attributes: ["profileId"] },
+      { key: "idx_userId", type: "key", attributes: ["userId"] },
+      { key: "idx_permission", type: "key", attributes: ["permission"] },
+      { key: "idx_isActive", type: "key", attributes: ["isActive"] },
       {
         key: "idx_createdAt",
         type: "key",
@@ -558,7 +606,7 @@ async function ensureCollectionSettings(
   collection,
   existing,
 ) {
-  if (collection.id !== "branch_payment_credentials") {
+  if (!PRIVATE_COLLECTION_IDS.has(collection.id)) {
     return;
   }
 

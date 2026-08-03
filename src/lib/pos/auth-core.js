@@ -5,6 +5,7 @@ import {
   createSessionAccount,
   toPublicUser,
 } from "../appwrite/admin.js";
+import { getActiveInventoryGrant } from "./inventory.js";
 
 const { databaseId, collections } = appwriteConfig;
 
@@ -129,14 +130,34 @@ export async function getCurrentUserContextFromSession({
     throw new ForbiddenError("Tu usuario esta inactivo.");
   }
 
+  const inventoryGrant =
+    profile.role === "cashier"
+      ? await getActiveInventoryGrant(databases, publicUser.id)
+      : null;
+  const inventoryGrantBranchIds = inventoryGrant
+    ? inventoryGrant.branchIds.filter((branchId) =>
+        profile.allowedBranchIds.includes(branchId),
+      )
+    : [];
+  const canIncreaseInventory =
+    profile.role === "admin" || inventoryGrantBranchIds.length > 0;
+  const contextProfile = {
+    ...profile,
+    canIncreaseInventory,
+    inventoryGrantBranchIds,
+  };
+
   return {
     user: publicUser,
-    profile,
+    profile: contextProfile,
     userAgent,
     isAdmin: profile.role === "admin",
     canManageCatalog: profile.role === "admin",
     canManagePayments: profile.role === "admin",
     canManageUsers: profile.role === "admin",
+    canIncreaseInventory,
+    inventoryGrant,
+    inventoryGrantBranchIds,
     allowedBranchIds: profile.allowedBranchIds,
   };
 }

@@ -244,21 +244,37 @@ async function fetchSaleItemsBySaleIds(databases, saleIds) {
     return new Map();
   }
 
-  const result = await databases.listDocuments({
-    databaseId,
-    collectionId: collections.saleItems,
-    queries: [
-      Query.equal("saleId", saleIds),
-      Query.orderAsc("$createdAt"),
-      Query.limit(500),
-    ],
-  });
   const itemsBySaleId = new Map(saleIds.map((saleId) => [saleId, []]));
+  const batchSize = 100;
 
-  for (const item of result.documents.map(toSaleItem)) {
-    const saleItems = itemsBySaleId.get(item.saleId) || [];
-    saleItems.push(item);
-    itemsBySaleId.set(item.saleId, saleItems);
+  for (let cursor = 0; cursor < saleIds.length; cursor += batchSize) {
+    const batchIds = saleIds.slice(cursor, cursor + batchSize);
+    let offset = 0;
+
+    while (true) {
+      const result = await databases.listDocuments({
+        databaseId,
+        collectionId: collections.saleItems,
+        queries: [
+          Query.equal("saleId", batchIds),
+          Query.orderAsc("$createdAt"),
+          Query.limit(500),
+          Query.offset(offset),
+        ],
+      });
+
+      for (const item of result.documents.map(toSaleItem)) {
+        const saleItems = itemsBySaleId.get(item.saleId) || [];
+        saleItems.push(item);
+        itemsBySaleId.set(item.saleId, saleItems);
+      }
+
+      if (result.documents.length < 500) {
+        break;
+      }
+
+      offset += result.documents.length;
+    }
   }
 
   return itemsBySaleId;
@@ -670,6 +686,14 @@ export async function getDailyIncomeReport(context, filters = {}) {
   }
 
   const sales = documents.map(toSale);
+  const itemsBySaleId = await fetchSaleItemsBySaleIds(
+    databases,
+    sales.map((sale) => sale.id),
+  );
+  const salesWithItems = sales.map((sale) => ({
+    ...sale,
+    items: itemsBySaleId.get(sale.id) || [],
+  }));
 
   return {
     date: reportDate,
@@ -681,7 +705,7 @@ export async function getDailyIncomeReport(context, filters = {}) {
       email: context.user.email,
     },
     summary: getSaleSummary(sales),
-    sales,
+    sales: salesWithItems,
     totalRecords,
     isLimited: totalRecords > sales.length,
   };

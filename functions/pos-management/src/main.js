@@ -10,6 +10,10 @@ import {
   updateProduct,
 } from "../../../src/lib/pos/management.js";
 import {
+  increaseProductStock,
+  listStockMovements,
+} from "../../../src/lib/pos/inventory.js";
+import {
   getFunctionRequest,
   sendError,
   sendJson,
@@ -65,6 +69,16 @@ export default async ({ req, res }) => {
     if (functionId === appwriteFunctions.management.productsDelete) {
       const productId = await deactivateProduct(context, body.productId);
       return sendJson(res, { productId });
+    }
+
+    if (functionId === appwriteFunctions.management.inventoryIncrease) {
+      const result = await increaseProductStock(context, body.input || {});
+      return sendJson(res, result, 201);
+    }
+
+    if (functionId === appwriteFunctions.management.inventoryMovementsList) {
+      const movements = await listStockMovements(context);
+      return sendJson(res, { movements });
     }
 
     return sendJson(

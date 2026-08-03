@@ -392,6 +392,38 @@
       "path": "."
     },
     {
+      "$id": "pos-management-inventory-increase",
+      "name": "POS - Increase Inventory",
+      "runtime": "node-16.0",
+      "execute": ["users"],
+      "events": [],
+      "schedule": "",
+      "timeout": 15,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "functions/pos-management/src/main.js",
+      "commands": "npm install",
+      "scopes": ["documents.read", "documents.write"],
+      "ignore": ["node_modules", ".next", ".git"],
+      "path": "."
+    },
+    {
+      "$id": "pos-management-inventory-movements-list",
+      "name": "POS - List Inventory Movements",
+      "runtime": "node-16.0",
+      "execute": ["users"],
+      "events": [],
+      "schedule": "",
+      "timeout": 15,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "functions/pos-management/src/main.js",
+      "commands": "npm install",
+      "scopes": ["documents.read"],
+      "ignore": ["node_modules", ".next", ".git"],
+      "path": "."
+    },
+    {
       "$id": "pos-users-list",
       "name": "POS - List Users",
       "runtime": "node-16.0",
@@ -467,6 +499,22 @@
         "users.read",
         "users.write"
       ],
+      "ignore": ["node_modules", ".next", ".git"],
+      "path": "."
+    },
+    {
+      "$id": "pos-users-inventory-permission-update",
+      "name": "POS - Update Inventory Permission",
+      "runtime": "node-16.0",
+      "execute": ["users"],
+      "events": [],
+      "schedule": "",
+      "timeout": 15,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "functions/pos-users/src/main.js",
+      "commands": "npm install",
+      "scopes": ["documents.read", "documents.write"],
       "ignore": ["node_modules", ".next", ".git"],
       "path": "."
     }

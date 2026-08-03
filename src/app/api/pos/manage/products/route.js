@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  assertCanManageCatalog,
+  ForbiddenError,
   getApiErrorResponse,
   getCurrentUserContext,
 } from "@/lib/pos/auth";
@@ -10,7 +10,9 @@ export async function GET(request) {
   try {
     const url = new URL(request.url);
     const context = await getCurrentUserContext({ redirectToLogin: false });
-    assertCanManageCatalog(context);
+    if (!context.canManageCatalog && !context.canIncreaseInventory) {
+      throw new ForbiddenError();
+    }
     const products = await listProducts(context, {
       search: url.searchParams.get("search") || "",
     });

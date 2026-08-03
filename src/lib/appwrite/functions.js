@@ -32,12 +32,15 @@ export const appwriteFunctions = {
     productsCreate: "pos-management-products-create",
     productsUpdate: "pos-management-products-update",
     productsDelete: "pos-management-products-delete",
+    inventoryIncrease: "pos-management-inventory-increase",
+    inventoryMovementsList: "pos-management-inventory-movements-list",
   },
   users: {
     list: "pos-users-list",
     create: "pos-users-create",
     update: "pos-users-update",
     delete: "pos-users-delete",
+    inventoryPermissionUpdate: "pos-users-inventory-permission-update",
   },
 };
 
