@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Image, ImageUp, Loader2, Save, Trash2 } from "lucide-react";
+import InstituteConnectionCard from "./institute-connection-card";
 
 function formatFileSize(bytes = 0) {
   if (!bytes) {
@@ -15,7 +16,11 @@ function formatFileSize(bytes = 0) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function SettingsClient({ initialSettings, canManage }) {
+export default function SettingsClient({
+  initialSettings,
+  initialInstituteSettings,
+  canManage,
+}) {
   const [settings, setSettings] = useState(initialSettings);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -141,7 +146,7 @@ export default function SettingsClient({ initialSettings, canManage }) {
           Configuraciones
         </h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Gestiona el logo que se muestra en el punto de venta.
+          Gestiona la identidad visual y las integraciones del punto de venta.
         </p>
       </div>
 
@@ -251,6 +256,11 @@ export default function SettingsClient({ initialSettings, canManage }) {
           </div>
         </form>
       </div>
+
+      <InstituteConnectionCard
+        initialSettings={initialInstituteSettings}
+        canManage={canManage}
+      />
     </section>
   );
 }

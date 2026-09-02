@@ -7,7 +7,11 @@ import { listBranches, listProducts } from "@/lib/pos/management";
 export default async function ProductsPage() {
   const context = await getCurrentUserContext();
 
-  if (!context.canManageCatalog && !context.canIncreaseInventory) {
+  if (
+    !context.canManageCatalog &&
+    !context.canIncreaseInventory &&
+    !context.canCreateProducts
+  ) {
     redirect("/");
   }
 
@@ -23,6 +27,7 @@ export default async function ProductsPage() {
       initialProducts={products}
       initialStockMovements={stockMovements}
       canManage={context.canManageCatalog}
+      canCreateProducts={context.canCreateProducts}
       canIncreaseInventory={context.canIncreaseInventory}
       inventoryBranchIds={context.inventoryGrantBranchIds}
       isAdmin={context.isAdmin}

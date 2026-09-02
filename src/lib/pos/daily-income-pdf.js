@@ -3,6 +3,7 @@ const PAGE_HEIGHT = 792;
 const MARGIN_X = 42;
 const TABLE_WIDTH = 528;
 const TABLE_HEADER_HEIGHT = 20;
+const SECTION_ROW_HEIGHT = 18;
 const MIN_ROW_HEIGHT = 22;
 const PRODUCT_LINE_HEIGHT = 9;
 const FOOTER_TOP_Y = 58;
@@ -174,22 +175,23 @@ function addTableHeader(lines, topY) {
   addRect(lines, MARGIN_X, y, TABLE_WIDTH, TABLE_HEADER_HEIGHT, "0.9");
   addRect(lines, MARGIN_X, y, TABLE_WIDTH, TABLE_HEADER_HEIGHT);
   addText(lines, 46, y + 7, "Venta", 8);
-  addText(lines, 126, y + 7, "Hora", 8);
-  addText(lines, 166, y + 7, "Metodo", 8);
-  addText(lines, 224, y + 7, "Productos", 8);
-  addText(lines, 402, y + 7, "Total", 8);
-  addText(lines, 456, y + 7, "Recibido", 8);
-  addText(lines, 516, y + 7, "Cambio", 8);
+  addText(lines, 120, y + 7, "Hora", 8);
+  addText(lines, 159, y + 7, "Metodo", 8);
+  addText(lines, 220, y + 7, "Detalle", 8);
+  addText(lines, 510, y + 7, "Importe", 8);
 
   return y;
 }
 
-function saleItemSummary(sale) {
-  const items = Array.isArray(sale.items) ? sale.items : [];
+function isMonthlyItem(item) {
+  return (
+    cleanText(item?.productSku) === "MENSUALIDAD" ||
+    cleanText(item?.productName).toLowerCase().startsWith("mensualidad:")
+  );
+}
 
-  if (items.length === 0) {
-    return "Sin detalle de productos";
-  }
+function saleItemSummary(items) {
+  if (items.length === 0) return "Sin detalle disponible";
 
   return items
     .map((item) => {
@@ -201,19 +203,32 @@ function saleItemSummary(sale) {
     .join("; ");
 }
 
-function getSaleProductLines(sale) {
-  return wrapText(saleItemSummary(sale), 36);
+function getEntryDetailLines(entry) {
+  return wrapText(saleItemSummary(entry.items), 47);
 }
 
-function getSaleRowHeight(productLines) {
-  return Math.max(
-    MIN_ROW_HEIGHT,
-    9 + productLines.length * PRODUCT_LINE_HEIGHT,
+function getEntryRowHeight(detailLines) {
+  return Math.max(MIN_ROW_HEIGHT, 9 + detailLines.length * PRODUCT_LINE_HEIGHT);
+}
+
+function addSectionRow(lines, row, rowTop) {
+  const rowBottom = rowTop - SECTION_ROW_HEIGHT;
+
+  addRect(lines, MARGIN_X, rowBottom, TABLE_WIDTH, SECTION_ROW_HEIGHT, "0.87");
+  addRect(lines, MARGIN_X, rowBottom, TABLE_WIDTH, SECTION_ROW_HEIGHT);
+  addText(
+    lines,
+    MARGIN_X + 7,
+    rowBottom + 6,
+    row.isContinuation ? `${row.title} (continuacion)` : row.title,
+    8,
   );
+
+  return rowBottom;
 }
 
-function addSaleRow(lines, row, rowTop) {
-  const { sale, productLines, rowHeight, index } = row;
+function addEntryRow(lines, row, rowTop) {
+  const { sale, detailLines, rowHeight, index, total } = row;
   const rowBottom = rowTop - rowHeight;
   const textTop = rowTop - 13;
 
@@ -223,14 +238,12 @@ function addSaleRow(lines, row, rowTop) {
 
   addLine(lines, MARGIN_X, rowBottom, 570, rowBottom);
   addText(lines, 46, textTop, truncateText(sale.saleNumber, 13), 8);
-  addText(lines, 126, textTop, formatTime(sale.completedAt), 8);
-  addText(lines, 166, textTop, truncateText(getPaymentLabel(sale), 10), 8);
-  productLines.forEach((line, lineIndex) => {
-    addText(lines, 224, textTop - lineIndex * PRODUCT_LINE_HEIGHT, line, 7);
+  addText(lines, 120, textTop, formatTime(sale.completedAt), 8);
+  addText(lines, 159, textTop, truncateText(getPaymentLabel(sale), 10), 8);
+  detailLines.forEach((line, lineIndex) => {
+    addText(lines, 220, textTop - lineIndex * PRODUCT_LINE_HEIGHT, line, 7);
   });
-  addText(lines, 402, textTop, money(sale.total), 8);
-  addText(lines, 456, textTop, money(sale.amountPaid), 8);
-  addText(lines, 516, textTop, money(sale.change), 8);
+  addText(lines, 500, textTop, money(total), 8);
 
   return rowBottom;
 }
@@ -239,34 +252,118 @@ function getTableTop(pageIndex) {
   return pageIndex === 0 ? FIRST_PAGE_TABLE_TOP : NEXT_PAGE_TABLE_TOP;
 }
 
-function paginateSales(sales) {
-  if (sales.length === 0) {
-    return [[]];
-  }
+function itemAmount(item) {
+  const subtotal = Number(item?.subtotal);
+
+  if (Number.isFinite(subtotal)) return subtotal;
+
+  return (Number(item?.quantity) || 0) * (Number(item?.unitPrice) || 0);
+}
+
+function getEntriesForCategory(sales, category) {
+  const monthly = category === "monthly";
+
+  return sales.flatMap((sale) => {
+    const items = Array.isArray(sale.items) ? sale.items : [];
+    const matchedItems = items.filter(
+      (item) => isMonthlyItem(item) === monthly,
+    );
+
+    if (matchedItems.length === 0) {
+      if (items.length > 0 || monthly) return [];
+
+      return [{ sale, items: [], total: Number(sale.total) || 0 }];
+    }
+
+    return [
+      {
+        sale,
+        items: matchedItems,
+        total: matchedItems.reduce((sum, item) => sum + itemAmount(item), 0),
+      },
+    ];
+  });
+}
+
+function getReportSections(sales) {
+  return [
+    {
+      title: "Ingresos de productos",
+      entries: getEntriesForCategory(sales, "products"),
+    },
+    {
+      title: "Ingresos de mensualidades",
+      entries: getEntriesForCategory(sales, "monthly"),
+    },
+  ].filter((section) => section.entries.length > 0);
+}
+
+function createEntryRow(entry, index) {
+  const detailLines = getEntryDetailLines(entry);
+
+  return {
+    kind: "entry",
+    ...entry,
+    detailLines,
+    rowHeight: getEntryRowHeight(detailLines),
+    index,
+  };
+}
+
+function paginateReportRows(sales) {
+  const sections = getReportSections(sales);
+
+  if (sections.length === 0) return [[]];
 
   const pages = [];
   let pageIndex = 0;
   let rowTop = getTableTop(pageIndex) - TABLE_HEADER_HEIGHT;
   let currentPage = [];
+  let entryIndex = 0;
 
-  sales.forEach((sale, index) => {
-    const productLines = getSaleProductLines(sale);
-    const rowHeight = getSaleRowHeight(productLines);
+  function startNextPage() {
+    pages.push(currentPage);
+    pageIndex += 1;
+    rowTop = getTableTop(pageIndex) - TABLE_HEADER_HEIGHT;
+    currentPage = [];
+  }
 
-    if (currentPage.length > 0 && rowTop - rowHeight < FOOTER_TOP_Y) {
-      pages.push(currentPage);
-      pageIndex += 1;
-      rowTop = getTableTop(pageIndex) - TABLE_HEADER_HEIGHT;
-      currentPage = [];
+  for (const section of sections) {
+    const entryRows = section.entries.map((entry) =>
+      createEntryRow(entry, entryIndex++),
+    );
+    const initialRequiredHeight = SECTION_ROW_HEIGHT + entryRows[0].rowHeight;
+
+    if (
+      currentPage.length > 0 &&
+      rowTop - initialRequiredHeight < FOOTER_TOP_Y
+    ) {
+      startNextPage();
     }
 
-    currentPage.push({ sale, productLines, rowHeight, index });
-    rowTop -= rowHeight;
-  });
+    currentPage.push({ kind: "section", title: section.title });
+    rowTop -= SECTION_ROW_HEIGHT;
 
-  if (currentPage.length > 0) {
-    pages.push(currentPage);
+    for (const entryRow of entryRows) {
+      if (
+        currentPage.length > 0 &&
+        rowTop - entryRow.rowHeight < FOOTER_TOP_Y
+      ) {
+        startNextPage();
+        currentPage.push({
+          kind: "section",
+          title: section.title,
+          isContinuation: true,
+        });
+        rowTop -= SECTION_ROW_HEIGHT;
+      }
+
+      currentPage.push(entryRow);
+      rowTop -= entryRow.rowHeight;
+    }
   }
+
+  if (currentPage.length > 0) pages.push(currentPage);
 
   return pages;
 }
@@ -276,6 +373,7 @@ function buildPageContent(report, pageRows, pageIndex, pageCount) {
   const isFirstPage = pageIndex === 0;
   const summary = report.summary || {};
   const paymentTotals = summary.paymentTotals || {};
+  const incomeTotals = summary.incomeTotals || {};
   const branchName = report.branch?.name || "-";
   const cashierName = report.cashier?.name || report.cashier?.email || "-";
 
@@ -300,10 +398,41 @@ function buildPageContent(report, pageRows, pageIndex, pageCount) {
   let tableTop = NEXT_PAGE_TABLE_TOP;
 
   if (isFirstPage) {
-    addSummaryBox(lines, 42, 628, 122, "Efectivo", money(paymentTotals.cash));
-    addSummaryBox(lines, 174, 628, 122, "QR", money(paymentTotals.qr));
-    addSummaryBox(lines, 306, 628, 122, "Total", money(summary.total));
-    addSummaryBox(lines, 438, 628, 122, "Ventas", String(summary.count || 0));
+    const productsIncome = incomeTotals.products || {};
+    const monthlyIncome = incomeTotals.monthly || {};
+
+    addSummaryBox(
+      lines,
+      42,
+      628,
+      122,
+      "Productos efectivo",
+      money(productsIncome.cash),
+    );
+    addSummaryBox(
+      lines,
+      174,
+      628,
+      122,
+      "Productos QR",
+      money(productsIncome.qr),
+    );
+    addSummaryBox(
+      lines,
+      306,
+      628,
+      122,
+      "Mensualidades efectivo",
+      money(monthlyIncome.cash),
+    );
+    addSummaryBox(
+      lines,
+      438,
+      628,
+      122,
+      "Mensualidades QR",
+      money(monthlyIncome.qr),
+    );
     tableTop = FIRST_PAGE_TABLE_TOP;
   }
 
@@ -329,7 +458,10 @@ function buildPageContent(report, pageRows, pageIndex, pageCount) {
     );
   } else {
     pageRows.forEach((row) => {
-      rowTop = addSaleRow(lines, row, rowTop);
+      rowTop =
+        row.kind === "section"
+          ? addSectionRow(lines, row, rowTop)
+          : addEntryRow(lines, row, rowTop);
     });
   }
 
@@ -383,7 +515,7 @@ function createPdf(pageContents) {
 
 export function buildDailyIncomePdf(report) {
   const sales = Array.isArray(report.sales) ? report.sales : [];
-  const pages = paginateSales(sales);
+  const pages = paginateReportRows(sales);
   const pageContents = pages.map((pageRows, index) =>
     buildPageContent(report, pageRows, index, pages.length),
   );

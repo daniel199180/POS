@@ -438,14 +438,20 @@ export default function CustomerDisplayClient({ initialSessionId }) {
                 {visibleCartItems.map((item) => (
                   <div
                     key={item.id}
-                    className="grid grid-cols-[minmax(0,1fr)_86px_130px] items-center border-b border-neutral-800 px-5 py-3 last:border-b-0"
+                    className={`mx-3 my-3 grid grid-cols-[minmax(0,1fr)_86px_130px] items-center rounded-md border p-3 ${
+                      item.category === "monthly"
+                        ? "border-cyan-800 bg-cyan-950/30"
+                        : "border-emerald-800 bg-emerald-950/30"
+                    }`}
                   >
                     <div className="min-w-0">
                       <p className="truncate text-lg font-semibold">
                         {item.name}
                       </p>
                       <p className="mt-1 truncate text-sm text-neutral-500">
-                        {item.sku}
+                        {item.category === "monthly"
+                          ? `Mensualidad${item.customerName ? ` · ${item.customerName}` : ""}`
+                          : item.sku}
                       </p>
                     </div>
                     <p className="text-center text-xl font-semibold">

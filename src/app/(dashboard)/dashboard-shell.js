@@ -95,7 +95,10 @@ export default function DashboardShell({ user, profile, settings, children }) {
       return true;
     }
 
-    return item.inventoryAccess && profile.canIncreaseInventory;
+    return (
+      item.inventoryAccess &&
+      (profile.canIncreaseInventory || profile.canCreateProducts)
+    );
   });
 
   useEffect(() => {

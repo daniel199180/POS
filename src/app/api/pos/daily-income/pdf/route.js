@@ -27,6 +27,7 @@ export async function GET(request) {
       report.date,
       safeFilePart(report.branch?.code || report.branch?.name),
       safeFilePart(report.cashier?.name || report.cashier?.email),
+      safeFilePart(report.generatedAt),
     ]
       .filter(Boolean)
       .join("-");

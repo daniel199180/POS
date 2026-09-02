@@ -5,6 +5,7 @@ import { SESSION_COOKIE } from "@/lib/appwrite/server";
 import {
   ForbiddenError,
   UnauthorizedError,
+  assertCanCreateProducts,
   assertCanManageCatalog,
   assertCanManagePayments,
   assertCanManageUsers,
@@ -15,6 +16,7 @@ import {
 export {
   ForbiddenError,
   UnauthorizedError,
+  assertCanCreateProducts,
   assertCanManageCatalog,
   assertCanManagePayments,
   assertCanManageUsers,

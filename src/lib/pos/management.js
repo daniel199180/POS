@@ -1,7 +1,11 @@
 import { ID, Permission, Query, Role } from "node-appwrite";
 import { createAdminClient } from "../appwrite/admin.js";
 import { appwriteConfig } from "../appwrite/config.js";
-import { assertCanManageCatalog, canAccessBranch } from "./auth-core.js";
+import {
+  assertCanCreateProducts,
+  assertCanManageCatalog,
+  canAccessBranch,
+} from "./auth-core.js";
 
 const { databaseId, collections } = appwriteConfig;
 const documentPermissions = [Permission.read(Role.users())];
@@ -130,7 +134,7 @@ function filterProductsForContext(products, context) {
     return products;
   }
 
-  if (context.canIncreaseInventory) {
+  if (context.canIncreaseInventory || context.canCreateProducts) {
     return products.filter((product) => product.isActive);
   }
 
@@ -327,7 +331,7 @@ export async function listProducts(context, { search = "" } = {}) {
 }
 
 export async function createProduct(context, input) {
-  assertCanManageCatalog(context);
+  assertCanCreateProducts(context);
 
   const { databases } = createAdminClient(context.userAgent);
   const { product, stockByBranch } = sanitizeProductInput(input);
@@ -339,7 +343,9 @@ export async function createProduct(context, input) {
     permissions: documentPermissions,
   });
 
-  await upsertProductStock(databases, document.$id, stockByBranch);
+  if (context.canManageCatalog) {
+    await upsertProductStock(databases, document.$id, stockByBranch);
+  }
 
   return document.$id;
 }

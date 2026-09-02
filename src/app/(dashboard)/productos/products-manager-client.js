@@ -94,10 +94,12 @@ export default function ProductsManagerClient({
   initialProducts,
   initialStockMovements = [],
   canManage,
+  canCreateProducts,
   canIncreaseInventory,
   inventoryBranchIds = [],
   isAdmin,
 }) {
+  const canCreateProduct = canManage || canCreateProducts;
   const [products, setProducts] = useState(initialProducts);
   const [stockMovements, setStockMovements] = useState(initialStockMovements);
   const [searchTerm, setSearchTerm] = useState("");
@@ -226,7 +228,7 @@ export default function ProductsManagerClient({
   async function saveProduct(event) {
     event.preventDefault();
 
-    if (!canManage) {
+    if (!canCreateProduct || (!canManage && form.id)) {
       return;
     }
 
@@ -337,7 +339,7 @@ export default function ProductsManagerClient({
   return (
     <section
       className={`mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 ${
-        canManage ? "xl:grid-cols-[minmax(0,1fr)_390px]" : ""
+        canCreateProduct ? "xl:grid-cols-[minmax(0,1fr)_390px]" : ""
       }`}
     >
       <div className="space-y-4">
@@ -350,7 +352,7 @@ export default function ProductsManagerClient({
               Productos
             </h1>
             <p className="mt-1 text-sm text-neutral-500">
-              {canManage
+              {canManage || canCreateProducts
                 ? `${activeProducts.length} productos activos`
                 : `${activeProducts.length} productos disponibles`}
             </p>
@@ -538,7 +540,7 @@ export default function ProductsManagerClient({
         ) : null}
       </div>
 
-      {canManage ? (
+      {canCreateProduct ? (
         <form
           onSubmit={saveProduct}
           className="h-fit rounded-md border border-neutral-800 bg-neutral-900 p-4"
@@ -550,7 +552,7 @@ export default function ProductsManagerClient({
               </p>
               <h2 className="mt-1 text-lg font-semibold">Producto</h2>
             </div>
-            {canManage ? (
+            {canCreateProduct ? (
               <button
                 type="button"
                 onClick={resetForm}
@@ -564,7 +566,8 @@ export default function ProductsManagerClient({
 
           {!canManage ? (
             <p className="mt-4 rounded-md border border-yellow-900 bg-yellow-950 px-3 py-2 text-sm text-yellow-100">
-              Tu usuario solo puede consultar productos.
+              Tu usuario puede crear productos, pero no modificarlos ni
+              asignarles stock.
             </p>
           ) : null}
 
@@ -574,7 +577,7 @@ export default function ProductsManagerClient({
               <input
                 value={form.name}
                 onChange={(event) => updateField("name", event.target.value)}
-                disabled={!canManage}
+                disabled={!canCreateProduct}
                 className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
             </label>
@@ -585,7 +588,7 @@ export default function ProductsManagerClient({
                 <input
                   value={form.sku}
                   onChange={(event) => updateField("sku", event.target.value)}
-                  disabled={!canManage}
+                  disabled={!canCreateProduct}
                   className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
                 />
               </label>
@@ -596,7 +599,7 @@ export default function ProductsManagerClient({
                   onChange={(event) =>
                     updateField("barcode", event.target.value)
                   }
-                  disabled={!canManage}
+                  disabled={!canCreateProduct}
                   className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
                 />
               </label>
@@ -609,7 +612,7 @@ export default function ProductsManagerClient({
                 onChange={(event) =>
                   updateField("description", event.target.value)
                 }
-                disabled={!canManage}
+                disabled={!canCreateProduct}
                 rows={3}
                 className="mt-1 w-full resize-none rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               />
@@ -621,7 +624,7 @@ export default function ProductsManagerClient({
                 <input
                   value={form.price}
                   onChange={(event) => updateField("price", event.target.value)}
-                  disabled={!canManage}
+                  disabled={!canCreateProduct}
                   type="number"
                   min="0"
                   step="0.01"
@@ -633,7 +636,7 @@ export default function ProductsManagerClient({
                 <input
                   value={form.cost}
                   onChange={(event) => updateField("cost", event.target.value)}
-                  disabled={!canManage}
+                  disabled={!canCreateProduct}
                   type="number"
                   min="0"
                   step="0.01"
@@ -645,7 +648,7 @@ export default function ProductsManagerClient({
                 <select
                   value={form.unit}
                   onChange={(event) => updateField("unit", event.target.value)}
-                  disabled={!canManage}
+                  disabled={!canCreateProduct}
                   className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
                 >
                   <option value="unit">Unidad</option>
@@ -662,7 +665,7 @@ export default function ProductsManagerClient({
                 onChange={(event) =>
                   updateField("isActive", event.target.checked)
                 }
-                disabled={!canManage}
+                disabled={!canCreateProduct}
                 type="checkbox"
                 className="size-4 accent-neutral-100"
               />
@@ -670,52 +673,54 @@ export default function ProductsManagerClient({
             </label>
           </div>
 
-          <div className="mt-5 border-t border-neutral-800 pt-4">
-            <p className="text-xs font-medium text-neutral-500 uppercase">
-              Stock por sucursal
-            </p>
-            <div className="mt-3 space-y-2">
-              {branches.map((branch) => (
-                <div
-                  key={branch.id}
-                  className="grid grid-cols-[1fr_90px_90px] items-center gap-2"
-                >
-                  <span className="truncate text-sm text-neutral-300">
-                    {branch.name}
-                  </span>
-                  <input
-                    value={form.stockByBranch[branch.id]?.quantity ?? 0}
-                    onChange={(event) =>
-                      updateStock(branch.id, "quantity", event.target.value)
-                    }
-                    disabled={!canManage}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
-                  />
-                  <input
-                    value={form.stockByBranch[branch.id]?.minStock ?? 0}
-                    onChange={(event) =>
-                      updateStock(branch.id, "minStock", event.target.value)
-                    }
-                    disabled={!canManage}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="mt-2 grid grid-cols-[1fr_90px_90px] gap-2 text-xs text-neutral-600">
-              <span />
-              <span>Cantidad</span>
-              <span>Minimo</span>
-            </div>
-          </div>
-
           {canManage ? (
+            <div className="mt-5 border-t border-neutral-800 pt-4">
+              <p className="text-xs font-medium text-neutral-500 uppercase">
+                Stock por sucursal
+              </p>
+              <div className="mt-3 space-y-2">
+                {branches.map((branch) => (
+                  <div
+                    key={branch.id}
+                    className="grid grid-cols-[1fr_90px_90px] items-center gap-2"
+                  >
+                    <span className="truncate text-sm text-neutral-300">
+                      {branch.name}
+                    </span>
+                    <input
+                      value={form.stockByBranch[branch.id]?.quantity ?? 0}
+                      onChange={(event) =>
+                        updateStock(branch.id, "quantity", event.target.value)
+                      }
+                      disabled={!canManage}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
+                    />
+                    <input
+                      value={form.stockByBranch[branch.id]?.minStock ?? 0}
+                      onChange={(event) =>
+                        updateStock(branch.id, "minStock", event.target.value)
+                      }
+                      disabled={!canManage}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 grid grid-cols-[1fr_90px_90px] gap-2 text-xs text-neutral-600">
+                <span />
+                <span>Cantidad</span>
+                <span>Minimo</span>
+              </div>
+            </div>
+          ) : null}
+
+          {canCreateProduct ? (
             <button
               type="submit"
               disabled={isSaving}

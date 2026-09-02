@@ -21,6 +21,8 @@ export const appwriteConfig = {
     branchPaymentCredentials:
       process.env.COL_BRANCH_PAYMENT_CREDENTIALS ||
       "branch_payment_credentials",
+    instituteApiSettings:
+      process.env.COL_INSTITUTE_API_SETTINGS || "institute_api_settings",
     categories: process.env.NEXT_PUBLIC_COL_CATEGORIES || "categories",
     products: process.env.NEXT_PUBLIC_COL_PRODUCTS || "products",
     stock: process.env.NEXT_PUBLIC_COL_STOCK || "stock",

@@ -10,7 +10,11 @@ export async function GET(request) {
   try {
     const url = new URL(request.url);
     const context = await getCurrentUserContext({ redirectToLogin: false });
-    if (!context.canManageCatalog && !context.canIncreaseInventory) {
+    if (
+      !context.canManageCatalog &&
+      !context.canIncreaseInventory &&
+      !context.canCreateProducts
+    ) {
       throw new ForbiddenError();
     }
     const products = await listProducts(context, {

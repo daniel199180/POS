@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Banknote,
   CircleCheck,
   CreditCard,
   Download,
   ExternalLink,
+  GraduationCap,
   Loader2,
   Monitor,
   Minus,
+  Package,
   Plus,
   QrCode,
   RotateCcw,
@@ -17,6 +19,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import InstitutePaymentsClient from "./instituto/institute-payments-client";
 import {
   CUSTOMER_DISPLAY_SESSION_STORAGE_KEY,
   CUSTOMER_DISPLAY_VERSION,
@@ -29,6 +32,7 @@ import {
 const PRODUCT_PAGE_SIZE = 20;
 const SALE_SUCCESS_RESET_DELAY_MS = 1800;
 const CUSTOM_CHARGE_SKU = "CUSTOM";
+const INSTITUTE_CHARGE_SKU = "MENSUALIDAD";
 const emptyDailyIncome = {
   date: "",
   generatedAt: "",
@@ -46,6 +50,10 @@ const emptyDailyIncome = {
       qr: 0,
       card: 0,
     },
+    incomeTotals: {
+      monthly: { cash: 0, card: 0, qr: 0, total: 0 },
+      products: { cash: 0, card: 0, qr: 0, total: 0 },
+    },
   },
 };
 
@@ -58,18 +66,18 @@ const paymentIcons = {
 const paymentToneClasses = {
   cash: {
     active:
-      "border-emerald-300 bg-emerald-400 text-emerald-950 shadow-[0_0_0_1px_rgba(110,231,183,0.45)]",
-    idle: "border-emerald-800 bg-emerald-950 text-emerald-100 hover:border-emerald-400 hover:bg-emerald-800",
+      "border-white bg-white text-neutral-950 shadow-[0_0_0_2px_rgba(255,255,255,0.28)]",
+    idle: "border-neutral-300 bg-white text-neutral-950 hover:border-white hover:bg-neutral-100",
   },
   qr: {
     active:
-      "border-cyan-200 bg-cyan-400 text-cyan-950 shadow-[0_0_0_1px_rgba(103,232,249,0.45)]",
-    idle: "border-cyan-800 bg-cyan-950 text-cyan-100 hover:border-cyan-400 hover:bg-cyan-800",
+      "border-white bg-white text-neutral-950 shadow-[0_0_0_2px_rgba(255,255,255,0.28)]",
+    idle: "border-neutral-300 bg-white text-neutral-950 hover:border-white hover:bg-neutral-100",
   },
   card: {
     active:
-      "border-fuchsia-200 bg-fuchsia-400 text-fuchsia-950 shadow-[0_0_0_1px_rgba(240,171,252,0.45)]",
-    idle: "border-fuchsia-800 bg-fuchsia-950 text-fuchsia-100 hover:border-fuchsia-400 hover:bg-fuchsia-800",
+      "border-white bg-white text-neutral-950 shadow-[0_0_0_2px_rgba(255,255,255,0.28)]",
+    idle: "border-neutral-300 bg-white text-neutral-950 hover:border-white hover:bg-neutral-100",
   },
 };
 
@@ -193,6 +201,8 @@ export default function DashboardClient({
   const [selectedBranchId, setSelectedBranchId] = useState(
     catalog.branches[0]?.id || "",
   );
+  const [activePosTab, setActivePosTab] = useState("products");
+  const [institutePanelKey, setInstitutePanelKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [customChargeName, setCustomChargeName] = useState("");
   const [customChargePrice, setCustomChargePrice] = useState("");
@@ -227,6 +237,31 @@ export default function DashboardClient({
   const [dailyIncomeError, setDailyIncomeError] = useState("");
   const logoUrl = settings?.logo?.url || "";
   const qrLogoUrl = logoUrl && !hasQrLogoImageError ? logoUrl : "";
+
+  const syncInstituteCart = useCallback(({ ci, payments, studentName }) => {
+    setCart((current) => {
+      const regularItems = current.filter((item) => !item.institutePayment);
+      const instituteItems = payments.map((payment) => ({
+        id: `custom-inst-${payment.$id}`.slice(0, 36),
+        institutePayment: {
+          ci,
+          courseBranchName: payment.courseBranchName,
+          courseName: payment.courseName,
+          paymentId: payment.$id,
+          period: payment.periodo,
+          studentName,
+        },
+        isCustom: true,
+        name: `Mensualidad: ${studentName} · ${payment.courseName} · ${payment.periodo} · ${payment.courseBranchName}`,
+        price: Number(payment.saldo),
+        quantity: 1,
+        sku: INSTITUTE_CHARGE_SKU,
+        stock: 1,
+      }));
+
+      return [...regularItems, ...instituteItems];
+    });
+  }, []);
 
   const selectedBranch = useMemo(
     () =>
@@ -268,6 +303,14 @@ export default function DashboardClient({
         .join("|"),
     [cart],
   );
+  const instituteCartItems = useMemo(
+    () => cart.filter((item) => item.institutePayment),
+    [cart],
+  );
+  const instituteCartPaymentIds = useMemo(
+    () => instituteCartItems.map((item) => item.institutePayment.paymentId),
+    [instituteCartItems],
+  );
 
   const totals = useMemo(() => {
     const subtotal = cart.reduce(
@@ -298,6 +341,8 @@ export default function DashboardClient({
         email: user.email,
       },
       cart: cart.map((item) => ({
+        category: item.institutePayment ? "monthly" : "product",
+        customerName: item.institutePayment?.studentName || "",
         id: item.id,
         name: item.name,
         sku: item.sku,
@@ -815,6 +860,10 @@ export default function DashboardClient({
             return item;
           }
 
+          if (item.institutePayment) {
+            return item;
+          }
+
           return {
             ...item,
             quantity:
@@ -940,6 +989,47 @@ export default function DashboardClient({
     window.setTimeout(() => publishCustomerDisplaySnapshot(), 250);
   }
 
+  async function registerInstitutePayments(items, saleNumber) {
+    const instituteItems = items.filter((item) => item.institutePayment);
+
+    if (instituteItems.length === 0) {
+      return;
+    }
+
+    if (!["cash", "qr"].includes(selectedPayment.type)) {
+      throw new Error(
+        "Las mensualidades solo se pueden cobrar con Efectivo o QR.",
+      );
+    }
+
+    const metodoPago = selectedPayment.type === "cash" ? "efectivo" : "qr";
+
+    for (const item of instituteItems) {
+      const response = await fetch("/api/pos/instituto-pagos", {
+        body: JSON.stringify({
+          ci: item.institutePayment.ci,
+          branchId: selectedBranchId,
+          metodoPago,
+          monto: Number((item.price * item.quantity).toFixed(2)),
+          notas: `Registro desde POS V1 · Venta ${saleNumber}`,
+          paymentId: item.institutePayment.paymentId,
+          referencia: saleNumber,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            result.message ||
+            "No se pudo registrar la mensualidad.",
+        );
+      }
+    }
+  }
+
   async function registerSale(extraPayload = {}) {
     setIsCharging(true);
     setSaleMessage("");
@@ -956,6 +1046,7 @@ export default function DashboardClient({
           amountPaid:
             selectedPayment.type === "cash" ? totals.paid : totals.total,
           items: cart.map((item) => ({
+            category: item.institutePayment ? "monthly" : "product",
             productId: item.id,
             quantity: item.quantity,
             isCustom: item.isCustom || false,
@@ -975,6 +1066,15 @@ export default function DashboardClient({
         paymentType: selectedPayment.type,
         senderName: payload.sale.senderName,
       });
+      let instituteWarning = "";
+
+      try {
+        await registerInstitutePayments(cart, payload.sale.saleNumber);
+      } catch (instituteError) {
+        instituteWarning = ` La venta quedó registrada, pero debes revisar Control Instituto: ${instituteError.message}`;
+      }
+
+      const completedMessage = `${successMessage}${instituteWarning}`;
       const completedSale = {
         id: payload.sale.id,
         saleNumber: payload.sale.saleNumber,
@@ -982,7 +1082,7 @@ export default function DashboardClient({
         paymentType: selectedPayment.type,
         paymentLabel: selectedPayment.label,
         senderName: payload.sale.senderName || "",
-        message: successMessage,
+        message: completedMessage,
         completedAt: new Date().toISOString(),
       };
       const completedSnapshot = buildCompletedSaleSnapshot({
@@ -990,17 +1090,20 @@ export default function DashboardClient({
         selectedBranch,
         user,
         completedSale,
-        successMessage,
+        successMessage: completedMessage,
         saleNumber: payload.sale.saleNumber,
       });
 
       setLastCompletedSale(completedSale);
       setSaleMessage(
-        `${successMessage} Venta ${payload.sale.saleNumber} registrada.`,
+        `${completedMessage} Venta ${payload.sale.saleNumber} registrada.`,
       );
       publishCustomerDisplaySnapshot(completedSnapshot);
       playPaymentSuccessSound();
       setCart([]);
+      if (instituteCartItems.length > 0) {
+        setInstitutePanelKey((current) => current + 1);
+      }
       setAmountPaid("");
       qrPaymentRef.current = null;
       setQrPayment(null);
@@ -1249,6 +1352,17 @@ export default function DashboardClient({
       return;
     }
 
+    if (
+      instituteCartItems.length > 0 &&
+      !["cash", "qr"].includes(selectedPayment.type)
+    ) {
+      setSaleMessage("");
+      setSaleError(
+        "Las mensualidades solo se pueden cobrar con Efectivo o QR.",
+      );
+      return;
+    }
+
     if (isBanecoQrPayment) {
       if (!qrPayment) {
         await generateQrPayment();
@@ -1273,8 +1387,9 @@ export default function DashboardClient({
   const dailyPaymentTotals = dailyIncome.summary?.paymentTotals || {};
   const dailyCashTotal = dailyPaymentTotals.cash || 0;
   const dailyQrTotal = dailyPaymentTotals.qr || 0;
-  const dailyTotal = dailyIncome.summary?.total || 0;
-  const dailyCount = dailyIncome.summary?.count || 0;
+  const dailyIncomeTotals = dailyIncome.summary?.incomeTotals || {};
+  const dailyProductsIncome = dailyIncomeTotals.products?.total || 0;
+  const dailyMonthlyIncome = dailyIncomeTotals.monthly?.total || 0;
   const actionLabel = isGeneratingQr
     ? "Generando QR..."
     : isCheckingQr
@@ -1306,7 +1421,7 @@ export default function DashboardClient({
             </div>
           ) : null}
 
-          {productsError ? (
+          {activePosTab === "products" && productsError ? (
             <div className="rounded-md border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-200">
               {productsError}
             </div>
@@ -1338,26 +1453,32 @@ export default function DashboardClient({
                 </select>
               </div>
 
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-500" />
-                <input
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  autoComplete="off"
-                  placeholder="Buscar por SKU, codigo o nombre"
-                  className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
-                />
-                {searchTerm ? (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm("")}
-                    className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100"
-                    aria-label="Limpiar busqueda"
-                  >
-                    <X className="size-4" />
-                  </button>
-                ) : null}
-              </div>
+              {activePosTab === "products" ? (
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-500" />
+                  <input
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    autoComplete="off"
+                    placeholder="Buscar por SKU, codigo o nombre"
+                    className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
+                  />
+                  {searchTerm ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm("")}
+                      className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100"
+                      aria-label="Limpiar busqueda"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="flex-1 text-sm text-neutral-500">
+                  Cobro de mensualidades
+                </div>
+              )}
 
               <button
                 type="button"
@@ -1371,128 +1492,183 @@ export default function DashboardClient({
                 <ExternalLink className="size-4 text-neutral-500" />
               </button>
             </div>
+
+            <div
+              aria-label="Secciones del punto de venta"
+              className="flex w-fit gap-1 rounded-md border border-neutral-800 bg-neutral-900 p-1"
+              role="tablist"
+            >
+              <button
+                aria-selected={activePosTab === "products"}
+                className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                  activePosTab === "products"
+                    ? "bg-emerald-400 text-emerald-950"
+                    : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                }`}
+                onClick={() => setActivePosTab("products")}
+                role="tab"
+                type="button"
+              >
+                <Package className="size-4" />
+                Productos
+              </button>
+              <button
+                aria-selected={activePosTab === "monthly"}
+                className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                  activePosTab === "monthly"
+                    ? "bg-cyan-400 text-cyan-950"
+                    : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                }`}
+                onClick={() => setActivePosTab("monthly")}
+                role="tab"
+                type="button"
+              >
+                <GraduationCap className="size-4" />
+                Mensualidades
+              </button>
+            </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
-            <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/70 px-4 py-3">
-              <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_150px_auto] lg:items-end">
-                <label className="text-xs font-medium text-neutral-400">
-                  Cobro personalizado
-                  <input
-                    value={customChargeName}
-                    onChange={(event) => {
-                      setCustomChargeName(event.target.value);
-                      setCustomChargeError("");
-                    }}
-                    placeholder="Nombre del cobro"
-                    className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
-                  />
-                </label>
-                <label className="text-xs font-medium text-neutral-400">
-                  Precio
-                  <input
-                    value={customChargePrice}
-                    onChange={(event) => {
-                      setCustomChargePrice(event.target.value);
-                      setCustomChargeError("");
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        addCustomChargeToCart();
-                      }
-                    }}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={addCustomChargeToCart}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-neutral-100 px-4 text-sm font-semibold text-neutral-950 transition hover:bg-white"
-                >
-                  <Plus className="size-4" />
-                  Agregar cobro
-                </button>
-              </div>
-              {customChargeError ? (
-                <p className="mt-2 text-sm text-red-300">{customChargeError}</p>
-              ) : null}
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-x-auto">
-              <div className="flex h-full min-w-[760px] flex-col">
-                <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_110px_110px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
-                  <span>Producto</span>
-                  <span>SKU</span>
-                  <span>Precio</span>
-                  <span>Stock</span>
-                  <span className="text-right">Accion</span>
+            {activePosTab === "products" ? (
+              <>
+                <div className="shrink-0 border-b border-emerald-900 bg-emerald-950/25 px-4 py-3">
+                  <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_150px_auto] lg:items-end">
+                    <label className="text-xs font-medium text-neutral-400">
+                      Cobro personalizado
+                      <input
+                        value={customChargeName}
+                        onChange={(event) => {
+                          setCustomChargeName(event.target.value);
+                          setCustomChargeError("");
+                        }}
+                        placeholder="Nombre del cobro"
+                        className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
+                      />
+                    </label>
+                    <label className="text-xs font-medium text-neutral-400">
+                      Precio
+                      <input
+                        value={customChargePrice}
+                        onChange={(event) => {
+                          setCustomChargePrice(event.target.value);
+                          setCustomChargeError("");
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            addCustomChargeToCart();
+                          }
+                        }}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addCustomChargeToCart}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-400 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300"
+                    >
+                      <Plus className="size-4" />
+                      Agregar cobro
+                    </button>
+                  </div>
+                  {customChargeError ? (
+                    <p className="mt-2 text-sm text-red-300">
+                      {customChargeError}
+                    </p>
+                  ) : null}
                 </div>
 
-                <div
-                  onScroll={handleProductsScroll}
-                  className="min-h-0 flex-1 overflow-y-auto"
-                >
-                  {products.map((product) => {
-                    const stock =
-                      product.stockByBranch[selectedBranchId]?.quantity || 0;
+                <div className="min-h-0 flex-1 overflow-x-auto">
+                  <div className="flex h-full min-w-[760px] flex-col">
+                    <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_110px_110px] border-b border-emerald-900 bg-emerald-950/45 px-4 py-3 text-xs font-medium text-emerald-300 uppercase">
+                      <span>Producto</span>
+                      <span>SKU</span>
+                      <span>Precio</span>
+                      <span>Stock</span>
+                      <span className="text-right">Accion</span>
+                    </div>
 
-                    return (
-                      <div
-                        key={product.id}
-                        className="grid grid-cols-[minmax(260px,1fr)_120px_120px_110px_110px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-neutral-100">
-                            {product.name}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-neutral-500">
-                            {product.barcode || "Sin codigo"}
-                          </p>
-                        </div>
-                        <span className="font-medium text-neutral-300">
-                          {product.sku}
-                        </span>
-                        <span className="font-semibold">
-                          {money(product.price)}
-                        </span>
-                        <span className="text-neutral-300">{stock}</span>
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => addToCart(product)}
-                            className="inline-flex h-9 items-center gap-2 rounded-md bg-neutral-100 px-3 text-sm font-semibold text-neutral-950 transition hover:bg-white"
+                    <div
+                      onScroll={handleProductsScroll}
+                      className="min-h-0 flex-1 overflow-y-auto"
+                    >
+                      {products.map((product) => {
+                        const stock =
+                          product.stockByBranch[selectedBranchId]?.quantity ||
+                          0;
+
+                        return (
+                          <div
+                            key={product.id}
+                            className="grid grid-cols-[minmax(260px,1fr)_120px_120px_110px_110px] items-center border-b border-emerald-950 px-4 py-3 text-sm last:border-b-0 hover:bg-emerald-950/35"
                           >
-                            <Plus className="size-4" />
-                            Agregar
-                          </button>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-neutral-100">
+                                {product.name}
+                              </p>
+                              <p className="mt-1 truncate text-xs text-neutral-500">
+                                {product.barcode || "Sin codigo"}
+                              </p>
+                            </div>
+                            <span className="font-medium text-neutral-300">
+                              {product.sku}
+                            </span>
+                            <span className="font-semibold">
+                              {money(product.price)}
+                            </span>
+                            <span className="text-neutral-300">{stock}</span>
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => addToCart(product)}
+                                className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-400 px-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300"
+                              >
+                                <Plus className="size-4" />
+                                Agregar
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {products.length === 0 && !isLoadingProducts ? (
+                        <div className="px-4 py-12 text-center text-sm text-neutral-500">
+                          No hay productos para esta busqueda.
                         </div>
-                      </div>
-                    );
-                  })}
+                      ) : null}
 
-                  {products.length === 0 && !isLoadingProducts ? (
-                    <div className="px-4 py-12 text-center text-sm text-neutral-500">
-                      No hay productos para esta busqueda.
-                    </div>
-                  ) : null}
+                      {isLoadingProducts ? (
+                        <div className="px-4 py-5 text-center text-sm text-neutral-500">
+                          Cargando productos...
+                        </div>
+                      ) : null}
 
-                  {isLoadingProducts ? (
-                    <div className="px-4 py-5 text-center text-sm text-neutral-500">
-                      Cargando productos...
+                      {!hasMoreProducts && products.length > 0 ? (
+                        <div className="px-4 py-4 text-center text-xs text-neutral-600">
+                          Fin del listado
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
-
-                  {!hasMoreProducts && products.length > 0 ? (
-                    <div className="px-4 py-4 text-center text-xs text-neutral-600">
-                      Fin del listado
-                    </div>
-                  ) : null}
+                  </div>
                 </div>
-              </div>
+              </>
+            ) : null}
+            <div
+              className={
+                activePosTab === "monthly" ? "flex min-h-0 flex-1" : "hidden"
+              }
+            >
+              <InstitutePaymentsClient
+                embedded
+                cartPaymentIds={instituteCartPaymentIds}
+                key={institutePanelKey}
+                onCartChange={syncInstituteCart}
+                selectedBranchName={selectedBranch?.name || ""}
+              />
             </div>
           </div>
 
@@ -1547,15 +1723,19 @@ export default function DashboardClient({
                 </p>
               </div>
               <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-neutral-500">Total</p>
+                <p className="text-xs font-medium text-emerald-400">
+                  Ingresos productos
+                </p>
                 <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : money(dailyTotal)}
+                  {isLoadingDailyIncome ? "..." : money(dailyProductsIncome)}
                 </p>
               </div>
               <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-neutral-500">Ventas</p>
+                <p className="text-xs font-medium text-cyan-400">
+                  Ingresos mensualidades
+                </p>
                 <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : dailyCount}
+                  {isLoadingDailyIncome ? "..." : money(dailyMonthlyIncome)}
                 </p>
               </div>
             </div>
@@ -1579,45 +1759,63 @@ export default function DashboardClient({
             {cart.map((item) => (
               <div
                 key={item.id}
-                className="rounded-md border border-neutral-800 bg-neutral-950 p-3"
+                className={`rounded-md border p-3 ${
+                  item.institutePayment
+                    ? "border-cyan-800 bg-cyan-950/30"
+                    : "border-emerald-800 bg-emerald-950/30"
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{item.name}</p>
-                    <p className="mt-1 text-xs text-neutral-500">{item.sku}</p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {item.institutePayment
+                        ? item.institutePayment.studentName || "Estudiante"
+                        : item.sku}
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => removeFromCart(item.id)}
                     className="grid size-8 shrink-0 place-items-center rounded-md text-neutral-500 transition hover:bg-neutral-800 hover:text-neutral-100"
-                    aria-label="Quitar producto"
+                    aria-label={
+                      item.institutePayment
+                        ? "Eliminar cobro"
+                        : "Quitar producto"
+                    }
                   >
                     <Trash2 className="size-4" />
                   </button>
                 </div>
 
                 <div className="mt-3 flex items-center justify-between">
-                  <div className="flex h-9 items-center rounded-md border border-neutral-800">
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(item.id, "decrease")}
-                      className="grid size-9 place-items-center text-neutral-300 transition hover:bg-neutral-800"
-                      aria-label="Disminuir cantidad"
-                    >
-                      <Minus className="size-4" />
-                    </button>
-                    <span className="w-10 text-center text-sm font-semibold">
-                      {item.quantity}
+                  {item.institutePayment ? (
+                    <span className="text-xs font-medium text-neutral-500">
+                      Mensualidad
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(item.id, "increase")}
-                      className="grid size-9 place-items-center text-neutral-300 transition hover:bg-neutral-800"
-                      aria-label="Aumentar cantidad"
-                    >
-                      <Plus className="size-4" />
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex h-9 items-center rounded-md border border-emerald-800 bg-emerald-950/30">
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(item.id, "decrease")}
+                        className="grid size-9 place-items-center text-emerald-100 transition hover:bg-emerald-900/60"
+                        aria-label="Disminuir cantidad"
+                      >
+                        <Minus className="size-4" />
+                      </button>
+                      <span className="w-10 text-center text-sm font-semibold">
+                        {item.quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(item.id, "increase")}
+                        className="grid size-9 place-items-center text-emerald-100 transition hover:bg-emerald-900/60"
+                        aria-label="Aumentar cantidad"
+                      >
+                        <Plus className="size-4" />
+                      </button>
+                    </div>
+                  )}
                   <p className="text-sm font-semibold">
                     {money(item.price * item.quantity)}
                   </p>

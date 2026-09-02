@@ -50,6 +50,7 @@ const STORAGE_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp"];
 const PRIVATE_COLLECTION_IDS = new Set([
   "branch_payment_credentials",
   "inventory_grants",
+  "institute_api_settings",
 ]);
 
 const stats = {
@@ -190,6 +191,12 @@ const collections = [
         array: true,
       },
       { type: "boolean", key: "isActive", required: true, default: true },
+      {
+        type: "boolean",
+        key: "canCreateProducts",
+        required: false,
+        default: false,
+      },
       { type: "string", key: "createdByUserId", size: 36, required: true },
       { type: "datetime", key: "lastLoginAt", required: false },
     ],
@@ -263,6 +270,18 @@ const collections = [
       },
       { key: "idx_isActive", type: "key", attributes: ["isActive"] },
     ],
+  },
+  {
+    id: "institute_api_settings",
+    name: "Institute API Settings",
+    attributes: [
+      { type: "string", key: "baseUrl", size: 512, required: true },
+      { type: "string", key: "encryptedPayload", size: 10000, required: true },
+      { type: "string", key: "tokenPrefix", size: 32, required: false },
+      { type: "boolean", key: "isEnabled", required: true, default: true },
+      { type: "string", key: "updatedByUserId", size: 36, required: true },
+    ],
+    indexes: [],
   },
   {
     id: "products",

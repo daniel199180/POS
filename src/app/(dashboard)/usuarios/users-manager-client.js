@@ -229,6 +229,45 @@ export default function UsersManagerClient({
     }
   }
 
+  async function toggleProductCreatePermission(user, enabled) {
+    if (!canManage || user.role !== "cashier") {
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/pos/manage/users/${user.id}/product-create-permission`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        },
+      );
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload.message || "No se pudo actualizar el permiso de productos.",
+        );
+      }
+
+      await refreshUsers(searchTerm);
+      setMessage(
+        enabled
+          ? "Permiso para crear productos habilitado."
+          : "Permiso para crear productos deshabilitado.",
+      );
+    } catch (toggleError) {
+      setError(toggleError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <section className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(0,1fr)_390px]">
       <div className="space-y-4">
@@ -287,14 +326,15 @@ export default function UsersManagerClient({
 
         <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
           <div className="overflow-x-auto">
-            <div className="min-w-[1060px]">
-              <div className="grid grid-cols-[minmax(190px,1fr)_minmax(210px,1fr)_100px_minmax(190px,1fr)_110px_150px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
+            <div className="min-w-[1210px]">
+              <div className="grid grid-cols-[minmax(190px,1fr)_minmax(210px,1fr)_100px_minmax(190px,1fr)_110px_150px_180px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
                 <span>Usuario</span>
                 <span>Correo</span>
                 <span>Rol</span>
                 <span>Sucursales</span>
                 <span>Estado</span>
                 <span>Inventario</span>
+                <span>Crear productos</span>
                 <span className="text-right">Acciones</span>
               </div>
 
@@ -302,7 +342,7 @@ export default function UsersManagerClient({
                 {users.map((user) => (
                   <div
                     key={user.id}
-                    className="grid grid-cols-[minmax(190px,1fr)_minmax(210px,1fr)_100px_minmax(190px,1fr)_110px_150px_120px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
+                    className="grid grid-cols-[minmax(190px,1fr)_minmax(210px,1fr)_100px_minmax(190px,1fr)_110px_150px_180px_120px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-medium text-neutral-100">
@@ -349,6 +389,32 @@ export default function UsersManagerClient({
                         <span className="relative h-6 w-11 rounded-full border border-neutral-700 bg-neutral-950 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-900 peer-disabled:opacity-50 after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:bg-neutral-400 after:transition peer-checked:after:translate-x-5 peer-checked:after:bg-emerald-100" />
                         <span>
                           {user.canIncreaseInventory
+                            ? "Habilitado"
+                            : "Sin permiso"}
+                        </span>
+                      </label>
+                    ) : (
+                      <span className="text-xs text-neutral-500">
+                        No aplica
+                      </span>
+                    )}
+                    {user.role === "cashier" ? (
+                      <label className="flex w-fit items-center gap-2 text-xs text-neutral-300">
+                        <input
+                          checked={Boolean(user.canCreateProducts)}
+                          onChange={(event) =>
+                            toggleProductCreatePermission(
+                              user,
+                              event.target.checked,
+                            )
+                          }
+                          disabled={!canManage || !user.isActive || isSaving}
+                          type="checkbox"
+                          className="peer sr-only"
+                        />
+                        <span className="relative h-6 w-11 rounded-full border border-neutral-700 bg-neutral-950 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-900 peer-disabled:opacity-50 after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:bg-neutral-400 after:transition peer-checked:after:translate-x-5 peer-checked:after:bg-emerald-100" />
+                        <span>
+                          {user.canCreateProducts
                             ? "Habilitado"
                             : "Sin permiso"}
                         </span>

@@ -17,6 +17,7 @@ const MAX_PAGE_SIZE = 100;
 const SUMMARY_LIMIT = 2000;
 const LA_PAZ_OFFSET = "-04:00";
 const CUSTOM_PRODUCT_SKU = "CUSTOM";
+const INSTITUTE_PAYMENT_SKU = "MENSUALIDAD";
 const CUSTOM_PRODUCT_ID_PREFIX = "custom-";
 
 function text(value, fallback = "") {
@@ -415,6 +416,48 @@ function getSaleSummary(sales) {
   };
 }
 
+function isInstitutePaymentItem(item) {
+  return (
+    item?.productSku === INSTITUTE_PAYMENT_SKU ||
+    text(item?.productName).toLowerCase().startsWith("mensualidad:")
+  );
+}
+
+function getIncomeCategoryTotals(sales) {
+  const totals = {
+    monthly: { cash: 0, card: 0, qr: 0, total: 0 },
+    products: { cash: 0, card: 0, qr: 0, total: 0 },
+  };
+
+  for (const sale of sales) {
+    if (sale.status !== "completed") continue;
+
+    const items = Array.isArray(sale.items) ? sale.items : [];
+    const paymentType = paymentTypes.has(sale.paymentMethodType)
+      ? sale.paymentMethodType
+      : "cash";
+
+    if (items.length === 0) {
+      totals.products[paymentType] = roundMoney(
+        totals.products[paymentType] + sale.total,
+      );
+      totals.products.total = roundMoney(totals.products.total + sale.total);
+      continue;
+    }
+
+    for (const item of items) {
+      const amount = roundMoney(item.subtotal);
+      const category = isInstitutePaymentItem(item) ? "monthly" : "products";
+      totals[category][paymentType] = roundMoney(
+        totals[category][paymentType] + amount,
+      );
+      totals[category].total = roundMoney(totals[category].total + amount);
+    }
+  }
+
+  return totals;
+}
+
 function sanitizeSaleItems(items) {
   if (!Array.isArray(items) || items.length === 0) {
     throw inputError("Agrega al menos un producto al carrito.");
@@ -437,6 +480,7 @@ function sanitizeSaleItems(items) {
     if (isCustom) {
       const name = text(item.name).slice(0, 200);
       const unitPrice = roundMoney(item.unitPrice || item.price);
+      const isInstitutePayment = text(item.category) === "monthly";
 
       if (!name || unitPrice <= 0) {
         throw inputError(
@@ -447,7 +491,9 @@ function sanitizeSaleItems(items) {
       itemsByProduct.set(productId.slice(0, 36), {
         productId: productId.slice(0, 36),
         productName: name,
-        productSku: CUSTOM_PRODUCT_SKU,
+        productSku: isInstitutePayment
+          ? INSTITUTE_PAYMENT_SKU
+          : CUSTOM_PRODUCT_SKU,
         quantity,
         unitPrice,
         isCustom: true,
@@ -704,7 +750,10 @@ export async function getDailyIncomeReport(context, filters = {}) {
       name: context.profile?.name || context.user.name || context.user.email,
       email: context.user.email,
     },
-    summary: getSaleSummary(sales),
+    summary: {
+      ...getSaleSummary(sales),
+      incomeTotals: getIncomeCategoryTotals(salesWithItems),
+    },
     sales: salesWithItems,
     totalRecords,
     isLimited: totalRecords > sales.length,

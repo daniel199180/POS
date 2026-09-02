@@ -44,6 +44,7 @@ function normalizeProfile(profile, user) {
           ? [branchId]
           : [],
     isActive: profile?.isActive !== false,
+    canCreateProducts: profile?.canCreateProducts === true,
   };
 }
 
@@ -141,10 +142,13 @@ export async function getCurrentUserContextFromSession({
     : [];
   const canIncreaseInventory =
     profile.role === "admin" || inventoryGrantBranchIds.length > 0;
+  const canCreateProducts =
+    profile.role === "admin" || profile.canCreateProducts;
   const contextProfile = {
     ...profile,
     canIncreaseInventory,
     inventoryGrantBranchIds,
+    canCreateProducts,
   };
 
   return {
@@ -156,6 +160,7 @@ export async function getCurrentUserContextFromSession({
     canManagePayments: profile.role === "admin",
     canManageUsers: profile.role === "admin",
     canIncreaseInventory,
+    canCreateProducts,
     inventoryGrant,
     inventoryGrantBranchIds,
     allowedBranchIds: profile.allowedBranchIds,
@@ -165,6 +170,12 @@ export async function getCurrentUserContextFromSession({
 export function assertCanManageCatalog(context) {
   if (!context.canManageCatalog) {
     throw new ForbiddenError();
+  }
+}
+
+export function assertCanCreateProducts(context) {
+  if (!context.canCreateProducts) {
+    throw new ForbiddenError("No tienes permisos para crear productos.");
   }
 }
 

@@ -55,6 +55,7 @@ function toUserProfile(document) {
           : [],
     isActive: document.isActive !== false,
     canIncreaseInventory: false,
+    canCreateProducts: document.canCreateProducts === true,
     createdByUserId: document.createdByUserId || "",
     lastLoginAt: document.lastLoginAt || "",
   };
@@ -218,6 +219,7 @@ export async function createManagedUser(context, input) {
     return {
       ...toUserProfile(document),
       canIncreaseInventory: false,
+      canCreateProducts: false,
     };
   } catch (error) {
     try {
@@ -285,7 +287,11 @@ export async function updateManagedUser(context, profileId, input) {
     databaseId,
     collectionId: collections.userProfiles,
     documentId: profileId,
-    data: profile,
+    data: {
+      ...profile,
+      canCreateProducts:
+        profile.role === "cashier" ? currentProfile.canCreateProducts : false,
+    },
   });
 
   const updatedProfile = toUserProfile(document);
@@ -330,6 +336,7 @@ export async function deactivateManagedUser(context, profileId) {
   return {
     ...toUserProfile(document),
     canIncreaseInventory: false,
+    canCreateProducts: false,
   };
 }
 
@@ -355,6 +362,41 @@ export async function updateManagedUserInventoryPermission(
   }
 
   const [updated] = await withInventoryGrantStatus(databases, [currentProfile]);
+
+  return updated;
+}
+
+export async function updateManagedUserProductCreatePermission(
+  context,
+  profileId,
+  input = {},
+) {
+  assertCanManageUsers(context);
+
+  const enabled =
+    typeof input.enabled === "boolean"
+      ? input.enabled
+      : Boolean(input.canCreateProducts);
+  const { databases } = createAdminClient(context.userAgent);
+  const currentDocument = await getProfileDocument(databases, profileId);
+  const currentProfile = toUserProfile(currentDocument);
+
+  if (currentProfile.role !== "cashier") {
+    throw inputError(
+      "Solo se puede habilitar la creacion de productos a cajeros.",
+    );
+  }
+
+  const document = await databases.updateDocument({
+    databaseId,
+    collectionId: collections.userProfiles,
+    documentId: profileId,
+    data: { canCreateProducts: enabled },
+  });
+
+  const [updated] = await withInventoryGrantStatus(databases, [
+    toUserProfile(document),
+  ]);
 
   return updated;
 }
