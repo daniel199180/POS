@@ -4,18 +4,25 @@ import {
   getApiErrorResponse,
   getCurrentUserContext,
 } from "@/lib/pos/auth";
-import { createManagedUser, listManagedUsers } from "@/lib/pos/users";
+import {
+  createManagedUser,
+  getUserManagementCapabilities,
+  listManagedUsers,
+} from "@/lib/pos/users";
 
 export async function GET(request) {
   try {
     const url = new URL(request.url);
     const context = await getCurrentUserContext({ redirectToLogin: false });
     assertCanManageUsers(context);
-    const users = await listManagedUsers(context, {
-      search: url.searchParams.get("search") || "",
-    });
+    const [users, capabilities] = await Promise.all([
+      listManagedUsers(context, {
+        search: url.searchParams.get("search") || "",
+      }),
+      getUserManagementCapabilities(context),
+    ]);
 
-    return NextResponse.json({ users });
+    return NextResponse.json({ users, capabilities });
   } catch (error) {
     return getApiErrorResponse(error);
   }

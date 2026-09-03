@@ -18,6 +18,7 @@ const fields = {
   stock: ["quantity", "minStock", "maxStock", "reason"],
   branch: ["name", "code", "address", "city", "phone", "isActive"],
   permission: ["canIncreaseInventory", "canCreateProducts", "allowedBranchIds"],
+  user: ["name", "email", "role", "allowedBranchIds", "isActive"],
   pos_settings: ["products", "monthly", "custom", "links", "daily"],
 };
 

@@ -29,9 +29,14 @@ export async function listAuditHistory(context, filters = {}) {
     queries.push(Query.equal(legacy ? "userId" : "actorId", filters.actorId));
   if (!legacy && filters.entityType) {
     if (
-      !["product", "stock", "branch", "permission", "pos_settings"].includes(
-        filters.entityType,
-      )
+      ![
+        "product",
+        "stock",
+        "branch",
+        "permission",
+        "pos_settings",
+        "user",
+      ].includes(filters.entityType)
     )
       throw reportInputError("Tipo de cambio inválido.");
     queries.push(Query.equal("entityType", filters.entityType));

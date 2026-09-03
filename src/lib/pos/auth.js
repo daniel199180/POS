@@ -10,6 +10,7 @@ import {
   assertCanManageCatalog,
   assertCanManagePayments,
   assertCanManageUsers,
+  assertCanViewAnalytics,
   canAccessBranch,
   getCurrentUserContextFromSession,
 } from "@/lib/pos/auth-core";
@@ -21,6 +22,7 @@ export {
   assertCanManageCatalog,
   assertCanManagePayments,
   assertCanManageUsers,
+  assertCanViewAnalytics,
   canAccessBranch,
 };
 

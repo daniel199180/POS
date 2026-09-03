@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiErrorResponse, getCurrentUserContext } from "@/lib/pos/auth";
-import { deactivateManagedUser, updateManagedUser } from "@/lib/pos/users";
+import { deleteManagedUser, updateManagedUser } from "@/lib/pos/users";
 
 export async function PATCH(request, { params }) {
   try {
@@ -19,7 +19,7 @@ export async function DELETE(request, { params }) {
   try {
     const { profileId } = await params;
     const context = await getCurrentUserContext({ redirectToLogin: false });
-    const user = await deactivateManagedUser(context, profileId);
+    const user = await deleteManagedUser(context, profileId);
 
     return NextResponse.json({ user });
   } catch (error) {

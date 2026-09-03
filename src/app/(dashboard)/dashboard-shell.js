@@ -53,7 +53,7 @@ const navigation = [
     href: "/analiticas",
     label: "Analíticas",
     icon: ChartNoAxesCombined,
-    adminOnly: true,
+    superAdminOnly: true,
   },
   {
     href: "/historial",
@@ -105,7 +105,15 @@ export default function DashboardShell({ user, profile, settings, children }) {
   const [collapsed, setCollapsed] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const visibleNavigation = navigation.filter((item) => {
-    if (!item.adminOnly || profile.role === "admin") {
+    if (item.superAdminOnly) {
+      return profile.role === "super_admin";
+    }
+
+    if (
+      !item.adminOnly ||
+      profile.role === "admin" ||
+      profile.role === "super_admin"
+    ) {
       return true;
     }
 
@@ -193,7 +201,9 @@ export default function DashboardShell({ user, profile, settings, children }) {
                     {user.email}
                   </p>
                   <span className="mt-3 inline-flex rounded-md border border-neutral-700 px-2 py-1 text-xs font-medium text-neutral-300 uppercase">
-                    {profile.role}
+                    {profile.role === "super_admin"
+                      ? "Super admin"
+                      : profile.role}
                   </span>
                 </div>
               ) : null}

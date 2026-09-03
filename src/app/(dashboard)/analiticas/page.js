@@ -6,7 +6,7 @@ import AnalyticsClient from "./analytics-client";
 
 export default async function AnalyticsPage() {
   const context = await getCurrentUserContext();
-  if (!context.isAdmin) redirect("/");
+  if (!context.canViewAnalytics) redirect("/");
   const options = await getAdminReportOptions(context);
   return (
     <AnalyticsClient

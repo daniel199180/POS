@@ -1,16 +1,13 @@
 import { Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
-import {
-  assertReportAdmin,
-  getAdminReportOptions,
-  readReportDocuments,
-} from "./report-data.js";
+import { getAdminReportOptions, readReportDocuments } from "./report-data.js";
+import { assertCanViewAnalytics } from "./auth-core.js";
 import { parseReportRange } from "./report-dates.js";
 import { buildSalesAnalytics } from "./analytics-core.js";
 
 export async function getSalesAnalytics(context, filters = {}) {
-  assertReportAdmin(context);
+  assertCanViewAnalytics(context);
   const range = parseReportRange(filters);
   const { databases } = createAdminClient(context.userAgent);
   const { collections } = appwriteConfig;

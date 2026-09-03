@@ -196,9 +196,9 @@ test("Bolivia date boundaries, equal-length prior period and invalid ranges", ()
   );
 });
 
-test("reports refuse cashier access before any database call", async () => {
+test("analytics require super admin while history rejects cashiers", async () => {
   await assert.rejects(
-    getSalesAnalytics({ isAdmin: false }),
+    getSalesAnalytics({ isAdmin: true, canViewAnalytics: false }),
     (error) => error.status === 403,
   );
   await assert.rejects(

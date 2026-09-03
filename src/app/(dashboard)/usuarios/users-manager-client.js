@@ -24,6 +24,7 @@ function toForm(user) {
 }
 
 function roleLabel(role) {
+  if (role === "super_admin") return "Super admin";
   return role === "admin" ? "Admin" : "Cajero";
 }
 
@@ -44,6 +45,8 @@ export default function UsersManagerClient({
   initialUsers,
   currentUserId,
   canManage,
+  isSuperAdmin,
+  initialHasActiveSuperAdmin,
 }) {
   const [users, setUsers] = useState(initialUsers);
   const [searchTerm, setSearchTerm] = useState("");
@@ -52,6 +55,9 @@ export default function UsersManagerClient({
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [hasActiveSuperAdmin, setHasActiveSuperAdmin] = useState(
+    initialHasActiveSuperAdmin,
+  );
 
   const activeUsers = useMemo(
     () => users.filter((user) => user.isActive),
@@ -62,6 +68,12 @@ export default function UsersManagerClient({
     [branches],
   );
   const isEditingSelf = form.userId === currentUserId;
+  const selectedUser = users.find((user) => user.id === form.id);
+  const editingProtectedSuperAdmin = Boolean(
+    selectedUser?.role === "super_admin" && !isSuperAdmin,
+  );
+  const canEditForm = canManage && !editingProtectedSuperAdmin;
+  const canAssignSuperAdmin = isSuperAdmin || !hasActiveSuperAdmin;
 
   useEffect(() => {
     if (!canManage) {
@@ -86,6 +98,7 @@ export default function UsersManagerClient({
     }
 
     setUsers(payload.users);
+    setHasActiveSuperAdmin(Boolean(payload.capabilities?.hasActiveSuperAdmin));
   }
 
   function resetForm() {
@@ -164,6 +177,16 @@ export default function UsersManagerClient({
       return;
     }
 
+    const target = users.find((user) => user.id === profileId);
+    if (
+      !target ||
+      !window.confirm(
+        `¿Eliminar definitivamente a ${target.name}? Esta acción cerrará sus sesiones y no se puede deshacer.`,
+      )
+    ) {
+      return;
+    }
+
     setIsSaving(true);
     setMessage("");
     setError("");
@@ -175,14 +198,14 @@ export default function UsersManagerClient({
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.message || "No se pudo desactivar.");
+        throw new Error(payload.message || "No se pudo eliminar.");
       }
 
       await refreshUsers(searchTerm);
       if (form.id === profileId) {
         resetForm();
       }
-      setMessage("Usuario desactivado.");
+      setMessage("Usuario eliminado definitivamente.");
     } catch (deleteError) {
       setError(deleteError.message);
     } finally {
@@ -318,6 +341,14 @@ export default function UsersManagerClient({
           </div>
         ) : null}
 
+        {!isSuperAdmin && !hasActiveSuperAdmin ? (
+          <div className="rounded-md border border-amber-800 bg-amber-950 px-4 py-3 text-sm text-amber-100">
+            Aún no existe un super administrador. Puedes crear el primero desde
+            el formulario de usuario; después este rol solo podrá gestionarlo
+            otro super administrador.
+          </div>
+        ) : null}
+
         {!canManage ? (
           <div className="rounded-md border border-yellow-900 bg-yellow-950 px-4 py-3 text-sm text-yellow-100">
             Solo un administrador puede gestionar usuarios.
@@ -428,19 +459,21 @@ export default function UsersManagerClient({
                       <button
                         type="button"
                         onClick={() => editUser(user)}
-                        className="grid size-9 place-items-center rounded-md border border-neutral-700 text-neutral-300 transition hover:border-neutral-300 hover:text-neutral-100"
+                        disabled={user.role === "super_admin" && !isSuperAdmin}
+                        className="grid size-9 place-items-center rounded-md border border-neutral-700 text-neutral-300 transition hover:border-neutral-300 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
                         title="Editar"
                       >
                         <Edit3 className="size-4" />
                       </button>
-                      {canManage &&
-                      user.isActive &&
-                      user.userId !== currentUserId ? (
+                      {canManage && user.userId !== currentUserId ? (
                         <button
                           type="button"
                           onClick={() => deleteUser(user.id)}
-                          className="grid size-9 place-items-center rounded-md border border-neutral-700 text-neutral-300 transition hover:border-red-500 hover:text-red-200"
-                          title="Desactivar"
+                          className="grid size-9 place-items-center rounded-md border border-neutral-700 text-neutral-300 transition hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={
+                            user.role === "super_admin" && !isSuperAdmin
+                          }
+                          title="Eliminar definitivamente"
                         >
                           <Trash2 className="size-4" />
                         </button>
@@ -489,7 +522,7 @@ export default function UsersManagerClient({
             <input
               value={form.name}
               onChange={(event) => updateField("name", event.target.value)}
-              disabled={!canManage}
+              disabled={!canEditForm}
               className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
             />
           </label>
@@ -499,7 +532,7 @@ export default function UsersManagerClient({
             <input
               value={form.email}
               onChange={(event) => updateField("email", event.target.value)}
-              disabled={!canManage}
+              disabled={!canEditForm}
               type="email"
               autoComplete="email"
               className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
@@ -514,7 +547,7 @@ export default function UsersManagerClient({
                 onChange={(event) =>
                   updateField("password", event.target.value)
                 }
-                disabled={!canManage}
+                disabled={!canEditForm}
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 placeholder={form.id ? "Opcional al editar" : ""}
@@ -523,7 +556,7 @@ export default function UsersManagerClient({
               <button
                 type="button"
                 onClick={() => setShowPassword((current) => !current)}
-                disabled={!canManage}
+                disabled={!canEditForm}
                 className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100 disabled:opacity-50"
                 aria-label={
                   showPassword ? "Ocultar contrasena" : "Ver contrasena"
@@ -545,11 +578,14 @@ export default function UsersManagerClient({
               <select
                 value={form.role}
                 onChange={(event) => updateField("role", event.target.value)}
-                disabled={!canManage || isEditingSelf}
+                disabled={!canEditForm || isEditingSelf}
                 className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
               >
                 <option value="cashier">Cajero</option>
                 <option value="admin">Admin</option>
+                {canAssignSuperAdmin || form.role === "super_admin" ? (
+                  <option value="super_admin">Super administrador</option>
+                ) : null}
               </select>
             </label>
 
@@ -559,7 +595,7 @@ export default function UsersManagerClient({
                 onChange={(event) =>
                   updateField("isActive", event.target.checked)
                 }
-                disabled={!canManage || isEditingSelf}
+                disabled={!canEditForm || isEditingSelf}
                 type="checkbox"
                 className="size-4 accent-neutral-100"
               />
@@ -581,7 +617,7 @@ export default function UsersManagerClient({
                 <input
                   checked={(form.allowedBranchIds || []).includes(branch.id)}
                   onChange={() => toggleBranch(branch.id)}
-                  disabled={!canManage}
+                  disabled={!canEditForm}
                   type="checkbox"
                   className="mt-0.5 size-4 shrink-0 accent-neutral-100"
                 />
@@ -604,7 +640,7 @@ export default function UsersManagerClient({
           </div>
         </div>
 
-        {canManage ? (
+        {canEditForm ? (
           <button
             type="submit"
             disabled={isSaving || branches.length === 0}

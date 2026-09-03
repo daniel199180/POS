@@ -2,7 +2,12 @@ import crypto from "node:crypto";
 import { ID, Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
-import { ForbiddenError, canAccessBranch } from "./auth-core.js";
+import {
+  ForbiddenError,
+  canAccessBranch,
+  isAdministratorRole,
+  normalizeUserRole,
+} from "./auth-core.js";
 import {
   cancelPosBanecoQr,
   checkPosBanecoQrStatus,
@@ -135,7 +140,8 @@ function toPaymentLink(
 }
 
 function contextFromPaymentLink(link, userAgent) {
-  const role = link.createdByRole === "admin" ? "admin" : "cashier";
+  const role = normalizeUserRole(link.createdByRole);
+  const isAdmin = isAdministratorRole(role);
   const email = text(link.createdByEmail);
   const name = text(link.createdByName) || email || "Cajero";
 
@@ -152,7 +158,9 @@ function contextFromPaymentLink(link, userAgent) {
       isActive: true,
     },
     userAgent,
-    isAdmin: role === "admin",
+    isAdmin,
+    isSuperAdmin: role === "super_admin",
+    canViewAnalytics: role === "super_admin",
     allowedBranchIds: [link.branchId],
   };
 }
@@ -416,8 +424,7 @@ export async function createPaymentLink(context, input = {}) {
           ).slice(0, 120),
           createdByEmail: text(context.user.email).slice(0, 200),
           createdByProfileId: text(context.profile?.id).slice(0, 36),
-          createdByRole:
-            context.profile?.role === "admin" ? "admin" : "cashier",
+          createdByRole: normalizeUserRole(context.profile?.role),
           branchId,
           branchName: branch.name,
           paymentMethodId,

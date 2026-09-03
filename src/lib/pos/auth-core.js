@@ -8,6 +8,22 @@ import {
 import { getActiveInventoryGrant } from "./inventory.js";
 
 const { databaseId, collections } = appwriteConfig;
+export const USER_ROLES = Object.freeze({
+  SUPER_ADMIN: "super_admin",
+  ADMIN: "admin",
+  CASHIER: "cashier",
+});
+
+export function normalizeUserRole(value) {
+  if (value === USER_ROLES.SUPER_ADMIN) return USER_ROLES.SUPER_ADMIN;
+  if (value === USER_ROLES.ADMIN) return USER_ROLES.ADMIN;
+  return USER_ROLES.CASHIER;
+}
+
+export function isAdministratorRole(value) {
+  const role = normalizeUserRole(value);
+  return role === USER_ROLES.SUPER_ADMIN || role === USER_ROLES.ADMIN;
+}
 
 export class UnauthorizedError extends Error {
   constructor(message = "No autorizado.") {
@@ -28,7 +44,7 @@ function normalizeProfile(profile, user) {
   const allowedBranchIds = Array.isArray(profile?.allowedBranchIds)
     ? profile.allowedBranchIds
     : [];
-  const role = profile?.role === "admin" ? "admin" : "cashier";
+  const role = normalizeUserRole(profile?.role);
 
   return {
     id: profile?.$id || "",
@@ -85,7 +101,7 @@ async function getOrCreateProfile(databases, user) {
         userId: user.id,
         name: user.name || user.email,
         email: user.email,
-        role: "admin",
+        role: USER_ROLES.SUPER_ADMIN,
         branchId,
         allowedBranchIds: [branchId],
         isActive: true,
@@ -97,12 +113,8 @@ async function getOrCreateProfile(databases, user) {
     return normalizeProfile(profile, user);
   }
 
-  return normalizeProfile(
-    {
-      role: "cashier",
-      isActive: true,
-    },
-    user,
+  throw new ForbiddenError(
+    "Tu cuenta no tiene un perfil autorizado en el POS.",
   );
 }
 
@@ -140,10 +152,10 @@ export async function getCurrentUserContextFromSession({
         profile.allowedBranchIds.includes(branchId),
       )
     : [];
-  const canIncreaseInventory =
-    profile.role === "admin" || inventoryGrantBranchIds.length > 0;
-  const canCreateProducts =
-    profile.role === "admin" || profile.canCreateProducts;
+  const isAdmin = isAdministratorRole(profile.role);
+  const isSuperAdmin = profile.role === USER_ROLES.SUPER_ADMIN;
+  const canIncreaseInventory = isAdmin || inventoryGrantBranchIds.length > 0;
+  const canCreateProducts = isAdmin || profile.canCreateProducts;
   const contextProfile = {
     ...profile,
     canIncreaseInventory,
@@ -155,10 +167,12 @@ export async function getCurrentUserContextFromSession({
     user: publicUser,
     profile: contextProfile,
     userAgent,
-    isAdmin: profile.role === "admin",
-    canManageCatalog: profile.role === "admin",
-    canManagePayments: profile.role === "admin",
-    canManageUsers: profile.role === "admin",
+    isAdmin,
+    isSuperAdmin,
+    canViewAnalytics: isSuperAdmin,
+    canManageCatalog: isAdmin,
+    canManagePayments: isAdmin,
+    canManageUsers: isAdmin,
     canIncreaseInventory,
     canCreateProducts,
     inventoryGrant,
@@ -188,6 +202,14 @@ export function assertCanManagePayments(context) {
 export function assertCanManageUsers(context) {
   if (!context.canManageUsers) {
     throw new ForbiddenError("Solo un administrador puede gestionar usuarios.");
+  }
+}
+
+export function assertCanViewAnalytics(context) {
+  if (!context.canViewAnalytics) {
+    throw new ForbiddenError(
+      "Solo un super administrador puede consultar las analíticas.",
+    );
   }
 }
 

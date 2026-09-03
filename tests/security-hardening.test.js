@@ -6,6 +6,11 @@ import {
   requestFingerprint,
 } from "../src/lib/security/rate-limit.js";
 import { filterInstituteLedgerByBranch } from "../src/lib/pos/institute-branch.js";
+import {
+  assertCanViewAnalytics,
+  isAdministratorRole,
+  normalizeUserRole,
+} from "../src/lib/pos/auth-core.js";
 
 test("rate limiter blocks abusive repeated requests", () => {
   const key = `test-${Date.now()}-${Math.random()}`;
@@ -70,4 +75,36 @@ test("database bootstrap keeps operational collections server-only", () => {
   for (const source of sourceModules) {
     assert.doesNotMatch(source, /Permission\.read\(Role\.users/);
   }
+});
+
+test("role hierarchy reserves analytics for super administrators", () => {
+  assert.equal(normalizeUserRole("super_admin"), "super_admin");
+  assert.equal(normalizeUserRole("admin"), "admin");
+  assert.equal(normalizeUserRole("unexpected"), "cashier");
+  assert.equal(isAdministratorRole("super_admin"), true);
+  assert.equal(isAdministratorRole("admin"), true);
+  assert.equal(isAdministratorRole("cashier"), false);
+  assert.throws(
+    () => assertCanViewAnalytics({ canViewAnalytics: false }),
+    (error) => error.status === 403,
+  );
+  assert.doesNotThrow(() => assertCanViewAnalytics({ canViewAnalytics: true }));
+});
+
+test("user deletion removes both the Appwrite account and POS profile", () => {
+  const route = readFileSync(
+    new URL(
+      "../src/app/api/pos/manage/users/[profileId]/route.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const users = readFileSync(
+    new URL("../src/lib/pos/users.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(route, /deleteManagedUser/);
+  assert.match(users, /users\.delete\(\{ userId: currentProfile\.userId \}\)/);
+  assert.match(users, /databases\.deleteDocument\(\{/);
+  assert.doesNotMatch(route, /deactivateManagedUser/);
 });

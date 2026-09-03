@@ -3,7 +3,11 @@ import { Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { assertPosSaleTabsEnabled } from "./pos-ui-settings.js";
-import { ForbiddenError, canAccessBranch } from "./auth-core.js";
+import {
+  ForbiddenError,
+  canAccessBranch,
+  normalizeUserRole,
+} from "./auth-core.js";
 import {
   cancelBanecoQr,
   generateBanecoQr,
@@ -92,7 +96,7 @@ function getQrAuthorizedCashier(context) {
     name,
     email: text(context.user?.email),
     profileId: text(context.profile?.id),
-    profileRole: context.profile?.role === "admin" ? "admin" : "cashier",
+    profileRole: normalizeUserRole(context.profile?.role),
     allowedBranchIds: Array.isArray(context.allowedBranchIds)
       ? context.allowedBranchIds.filter(Boolean)
       : [],

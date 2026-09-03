@@ -180,7 +180,7 @@ const collections = [
       {
         type: "enum",
         key: "role",
-        elements: ["admin", "cashier"],
+        elements: ["super_admin", "admin", "cashier"],
         required: true,
         default: "cashier",
       },
@@ -518,7 +518,7 @@ const collections = [
       {
         type: "enum",
         key: "createdByRole",
-        elements: ["admin", "cashier"],
+        elements: ["super_admin", "admin", "cashier"],
         required: true,
       },
       { type: "string", key: "branchId", size: 36, required: true },
@@ -752,11 +752,40 @@ async function ensureAttribute(databases, databaseId, collectionId, attribute) {
   const label = `attribute ${collectionId}.${attribute.key}`;
 
   try {
-    await databases.getAttribute({
+    const existing = await databases.getAttribute({
       databaseId,
       collectionId,
       key: attribute.key,
     });
+    if (attribute.type === "enum") {
+      const currentElements = Array.isArray(existing.elements)
+        ? existing.elements
+        : [];
+      const needsUpdate =
+        currentElements.length !== attribute.elements.length ||
+        attribute.elements.some(
+          (element) => !currentElements.includes(element),
+        );
+
+      if (needsUpdate) {
+        await databases.updateEnumAttribute({
+          databaseId,
+          collectionId,
+          key: attribute.key,
+          elements: attribute.elements,
+          required: attribute.required,
+          xdefault:
+            existing.default ??
+            (!attribute.required &&
+            Object.prototype.hasOwnProperty.call(attribute, "default")
+              ? attribute.default
+              : null),
+        });
+        logUpdated(label);
+        await sleep(OPERATION_DELAY_MS);
+        return;
+      }
+    }
     logSkipped(label);
     return;
   } catch (error) {

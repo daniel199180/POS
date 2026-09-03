@@ -6,7 +6,12 @@ import {
   assertPosBanecoQrPaidToken,
   getPosBanecoQrPaymentTokenPayload,
 } from "./baneco-qr.js";
-import { ForbiddenError, canAccessBranch } from "./auth-core.js";
+import {
+  ForbiddenError,
+  canAccessBranch,
+  isAdministratorRole,
+  normalizeUserRole,
+} from "./auth-core.js";
 import { getSaleOrigin, saleItemCategory } from "./sale-origin.js";
 import {
   assertPosSaleTabsEnabled,
@@ -109,7 +114,8 @@ export function createSaleContextFromBanecoQrToken(input, userAgent) {
 
   const email = text(cashier.email);
   const name = text(cashier.name) || email || "Cajero";
-  const role = cashier.profileRole === "admin" ? "admin" : "cashier";
+  const role = normalizeUserRole(cashier.profileRole);
+  const isAdmin = isAdministratorRole(role);
   const allowedBranchIds = normalizeTokenBranchIds(
     cashier.allowedBranchIds,
     branchId,
@@ -132,10 +138,12 @@ export function createSaleContextFromBanecoQrToken(input, userAgent) {
       isActive: true,
     },
     userAgent,
-    isAdmin: role === "admin",
-    canManageCatalog: role === "admin",
-    canManagePayments: role === "admin",
-    canManageUsers: role === "admin",
+    isAdmin,
+    isSuperAdmin: role === "super_admin",
+    canViewAnalytics: role === "super_admin",
+    canManageCatalog: isAdmin,
+    canManagePayments: isAdmin,
+    canManageUsers: isAdmin,
     allowedBranchIds,
     fromSignedQrPaymentToken: true,
   };

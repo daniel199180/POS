@@ -21,6 +21,7 @@ const actions = {
   "branch.deactivate": "Sucursal desactivada",
   "permission.inventory": "Permiso de inventario",
   "permission.products": "Permiso de crear productos",
+  "user.delete": "Usuario eliminado",
   "pos.tabs.update": "Pestañas del POS actualizadas",
   "movement.in": "Entrada de inventario",
   "movement.out": "Salida por venta",
@@ -29,6 +30,8 @@ const actions = {
 };
 const fields = {
   name: "Nombre",
+  email: "Correo",
+  role: "Rol",
   sku: "SKU",
   barcode: "Código de barras",
   description: "Descripción",
@@ -199,6 +202,7 @@ export default function HistoryClient({ options, initialFilters }) {
             <option value="stock">Inventario</option>
             <option value="branch">Sucursales</option>
             <option value="permission">Permisos</option>
+            <option value="user">Usuarios</option>
             <option value="pos_settings">Pestañas del POS</option>
           </select>
         </label>
@@ -248,9 +252,11 @@ export default function HistoryClient({ options, initialFilters }) {
                           {event.branchName ||
                             (event.entityType === "permission"
                               ? "Permisos de usuario"
-                              : event.entityType === "pos_settings"
-                                ? "Configuración global del POS"
-                                : "Catálogo global")}
+                              : event.entityType === "user"
+                                ? "Gestión de usuarios"
+                                : event.entityType === "pos_settings"
+                                  ? "Configuración global del POS"
+                                  : "Catálogo global")}
                         </span>
                       </span>
                       <span className="text-right text-xs">

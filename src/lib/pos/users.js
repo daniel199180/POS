@@ -1,7 +1,12 @@
 import { ID, Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
-import { assertCanManageUsers } from "./auth-core.js";
+import {
+  ForbiddenError,
+  USER_ROLES,
+  assertCanManageUsers,
+  normalizeUserRole,
+} from "./auth-core.js";
 import { withAudit } from "./audit-writer.js";
 import {
   createInventoryGrant,
@@ -13,7 +18,7 @@ import {
 
 const { databaseId, collections } = appwriteConfig;
 const documentPermissions = [];
-const roles = new Set(["admin", "cashier"]);
+const roles = new Set(Object.values(USER_ROLES));
 
 function text(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
@@ -47,7 +52,7 @@ function toUserProfile(document) {
     userId: document.userId,
     name: document.name,
     email: document.email,
-    role: document.role === "admin" ? "admin" : "cashier",
+    role: normalizeUserRole(document.role),
     branchId,
     allowedBranchIds:
       allowedBranchIds.length > 0
@@ -93,6 +98,57 @@ async function getActiveBranchIds(databases) {
   return new Set(result.documents.map((branch) => branch.$id));
 }
 
+async function countActiveSuperAdmins(databases) {
+  const result = await databases.listDocuments({
+    databaseId,
+    collectionId: collections.userProfiles,
+    queries: [
+      Query.equal("role", USER_ROLES.SUPER_ADMIN),
+      Query.equal("isActive", true),
+      Query.limit(1),
+    ],
+  });
+  return result.total;
+}
+
+function assertCanManageProfile(context, profile) {
+  if (profile.role === USER_ROLES.SUPER_ADMIN && !context.isSuperAdmin) {
+    throw new ForbiddenError(
+      "Solo un super administrador puede modificar otro super administrador.",
+    );
+  }
+}
+
+async function assertCanAssignRole(
+  databases,
+  context,
+  role,
+  { creating = false } = {},
+) {
+  if (role !== USER_ROLES.SUPER_ADMIN || context.isSuperAdmin) return;
+
+  const activeSuperAdmins = await countActiveSuperAdmins(databases);
+  if (!creating || activeSuperAdmins > 0) {
+    throw new ForbiddenError(
+      "Solo un super administrador puede asignar ese rol.",
+    );
+  }
+}
+
+async function assertKeepsActiveSuperAdmin(databases, currentProfile, next) {
+  if (
+    currentProfile.role !== USER_ROLES.SUPER_ADMIN ||
+    currentProfile.isActive === false ||
+    (next.role === USER_ROLES.SUPER_ADMIN && next.isActive !== false)
+  ) {
+    return;
+  }
+
+  if ((await countActiveSuperAdmins(databases)) <= 1) {
+    throw inputError("Debe permanecer al menos un super administrador activo.");
+  }
+}
+
 async function sanitizeUserInput(
   databases,
   input,
@@ -101,7 +157,11 @@ async function sanitizeUserInput(
   const name = text(input.name);
   const email = normalizeEmail(input.email);
   const password = text(input.password);
-  const role = roles.has(input.role) ? input.role : "cashier";
+  const requestedRole = text(input.role, USER_ROLES.CASHIER);
+  if (!roles.has(requestedRole)) {
+    throw inputError("Selecciona un rol válido.");
+  }
+  const role = normalizeUserRole(requestedRole);
   const allowedBranchIds = normalizeBranchIds(
     input.allowedBranchIds || input.branchIds || [input.branchId],
   );
@@ -191,12 +251,23 @@ export async function listManagedUsers(context, { search = "" } = {}) {
   return withInventoryGrantStatus(databases, profiles);
 }
 
+export async function getUserManagementCapabilities(context) {
+  assertCanManageUsers(context);
+  const { databases } = createAdminClient(context.userAgent);
+  return {
+    hasActiveSuperAdmin: (await countActiveSuperAdmins(databases)) > 0,
+  };
+}
+
 export async function createManagedUser(context, input) {
   assertCanManageUsers(context);
 
   const { databases, users } = createAdminClient(context.userAgent);
   const { account, profile } = await sanitizeUserInput(databases, input, {
     requirePassword: true,
+  });
+  await assertCanAssignRole(databases, context, profile.role, {
+    creating: true,
   });
   const createdUser = await users.create({
     userId: ID.unique(),
@@ -240,13 +311,16 @@ export async function updateManagedUser(context, profileId, input) {
   const { databases, users } = createAdminClient(context.userAgent);
   const currentDocument = await getProfileDocument(databases, profileId);
   const currentProfile = toUserProfile(currentDocument);
+  assertCanManageProfile(context, currentProfile);
   const { account, profile } = await sanitizeUserInput(databases, input);
+  await assertCanAssignRole(databases, context, profile.role);
+  await assertKeepsActiveSuperAdmin(databases, currentProfile, profile);
 
   if (
     currentProfile.userId === context.user.id &&
-    (!profile.isActive || profile.role !== "admin")
+    (!profile.isActive || profile.role !== currentProfile.role)
   ) {
-    throw inputError("No puedes quitarte tu propio acceso administrador.");
+    throw inputError("No puedes quitarte tu propio acceso administrativo.");
   }
 
   if (currentProfile.name !== account.name) {
@@ -309,37 +383,55 @@ export async function updateManagedUser(context, profileId, input) {
   return updated;
 }
 
-export async function deactivateManagedUser(context, profileId) {
+export async function deleteManagedUser(context, profileId) {
   assertCanManageUsers(context);
 
   const { databases, users } = createAdminClient(context.userAgent);
   const currentDocument = await getProfileDocument(databases, profileId);
   const currentProfile = toUserProfile(currentDocument);
+  assertCanManageProfile(context, currentProfile);
 
   if (currentProfile.userId === context.user.id) {
-    throw inputError("No puedes desactivar tu propio usuario.");
+    throw inputError("No puedes eliminar tu propio usuario.");
   }
 
-  await users.updateStatus({
-    userId: currentProfile.userId,
-    status: false,
-  });
-  await deleteUserSessions(users, currentProfile.userId);
-
-  const document = await databases.updateDocument({
-    databaseId,
-    collectionId: collections.userProfiles,
-    documentId: profileId,
-    data: { isActive: false },
+  await assertKeepsActiveSuperAdmin(databases, currentProfile, {
+    ...currentProfile,
+    isActive: false,
   });
 
-  await revokeInventoryGrants(databases, context, currentProfile.userId);
-
-  return {
-    ...toUserProfile(document),
-    canIncreaseInventory: false,
-    canCreateProducts: false,
-  };
+  return withAudit(
+    databases,
+    context,
+    {
+      entityType: "user",
+      entityId: profileId,
+      entityName: currentProfile.name,
+      action: "user.delete",
+      before: currentProfile,
+      after: {
+        name: null,
+        email: null,
+        role: null,
+        allowedBranchIds: [],
+        isActive: false,
+      },
+    },
+    async () => {
+      await revokeInventoryGrants(databases, context, currentProfile.userId);
+      try {
+        await users.delete({ userId: currentProfile.userId });
+      } catch (error) {
+        if (error?.code !== 404) throw error;
+      }
+      await databases.deleteDocument({
+        databaseId,
+        collectionId: collections.userProfiles,
+        documentId: profileId,
+      });
+      return { id: profileId, userId: currentProfile.userId, deleted: true };
+    },
+  );
 }
 
 export async function updateManagedUserInventoryPermission(

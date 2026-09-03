@@ -22,6 +22,10 @@ export default async function UsersPage() {
       initialUsers={users}
       currentUserId={context.user.id}
       canManage={context.canManageUsers}
+      isSuperAdmin={context.isSuperAdmin}
+      initialHasActiveSuperAdmin={users.some(
+        (user) => user.role === "super_admin" && user.isActive,
+      )}
     />
   );
 }
