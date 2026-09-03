@@ -17,6 +17,7 @@ export async function GET(request) {
         branch: report.branch,
         cashier: report.cashier,
         summary: report.summary,
+        sales: report.sales,
         salesCount: report.sales.length,
         totalRecords: report.totalRecords,
         isLimited: report.isLimited,

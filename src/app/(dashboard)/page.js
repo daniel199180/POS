@@ -2,6 +2,7 @@ import DashboardClient from "./dashboard-client";
 import { getCurrentUserContext } from "@/lib/pos/auth";
 import { getPosCatalog } from "@/lib/pos/catalog";
 import { getLogoSettings } from "@/lib/pos/settings";
+import { listStoredPosTabSettings } from "@/lib/pos/pos-ui-settings";
 
 const emptyCatalog = {
   branches: [],
@@ -19,18 +20,22 @@ export default async function Home() {
   let catalog = emptyCatalog;
   let catalogError = "";
   let settings = { logo: null };
+  let posTabSettingsByBranch = {};
 
-  try {
-    catalog = await getPosCatalog(context.userAgent, context);
-  } catch (error) {
-    catalogError = error.message || "No se pudo cargar el catalogo.";
+  const [catalogResult, settingsResult, tabsResult] = await Promise.allSettled([
+    getPosCatalog(context.userAgent, context),
+    getLogoSettings(context),
+    listStoredPosTabSettings(context),
+  ]);
+  if (catalogResult.status === "fulfilled") {
+    catalog = catalogResult.value;
+  } else {
+    catalogError =
+      catalogResult.reason?.message || "No se pudo cargar el catalogo.";
   }
-
-  try {
-    settings = await getLogoSettings(context);
-  } catch {
-    settings = { logo: null };
-  }
+  if (settingsResult.status === "fulfilled") settings = settingsResult.value;
+  if (tabsResult.status === "fulfilled")
+    posTabSettingsByBranch = tabsResult.value;
 
   return (
     <DashboardClient
@@ -38,6 +43,7 @@ export default async function Home() {
       catalog={catalog}
       catalogError={catalogError}
       settings={settings}
+      tabSettingsByBranch={posTabSettingsByBranch}
     />
   );
 }

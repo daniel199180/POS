@@ -97,6 +97,7 @@ export default function InstitutePaymentsClient({
   embedded = false,
   cartPaymentIds = [],
   onCartChange,
+  selectedBranchId = "",
   selectedBranchName = "",
 }) {
   const [ci, setCi] = useState("");
@@ -188,7 +189,7 @@ export default function InstitutePaymentsClient({
 
     try {
       const response = await fetch(
-        `/api/pos/instituto-pagos?ci=${encodeURIComponent(cleanCi)}`,
+        `/api/pos/instituto-pagos?ci=${encodeURIComponent(cleanCi)}&branchId=${encodeURIComponent(selectedBranchId)}`,
       );
       const result = await readResponse(response);
       if (!response.ok) {
@@ -221,6 +222,7 @@ export default function InstitutePaymentsClient({
         const response = await fetch("/api/pos/instituto-pagos", {
           body: JSON.stringify({
             ci: ledger.estudiante.documento,
+            branchId: selectedBranchId,
             metodoPago: method,
             monto: Number(monto.toFixed(2)),
             notas: "Registro desde POS V1",
@@ -247,7 +249,7 @@ export default function InstitutePaymentsClient({
       setAmount("");
       setReference("");
       const response = await fetch(
-        `/api/pos/instituto-pagos?ci=${encodeURIComponent(ci.trim())}`,
+        `/api/pos/instituto-pagos?ci=${encodeURIComponent(ci.trim())}&branchId=${encodeURIComponent(selectedBranchId)}`,
       );
       const refreshedLedger = await readResponse(response);
       if (response.ok) setLedger(refreshedLedger);

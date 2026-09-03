@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LogOut,
+  History,
+  ChartNoAxesCombined,
   Menu,
   Package,
   PanelLeftClose,
@@ -45,6 +47,18 @@ const navigation = [
     href: "/pagos",
     label: "Pagos",
     icon: CreditCard,
+    adminOnly: true,
+  },
+  {
+    href: "/analiticas",
+    label: "Analíticas",
+    icon: ChartNoAxesCombined,
+    adminOnly: true,
+  },
+  {
+    href: "/historial",
+    label: "Historial de cambios",
+    icon: History,
     adminOnly: true,
   },
   {

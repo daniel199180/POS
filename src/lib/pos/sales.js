@@ -1,4 +1,4 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import {
@@ -7,9 +7,14 @@ import {
   getPosBanecoQrPaymentTokenPayload,
 } from "./baneco-qr.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
+import { getSaleOrigin, saleItemCategory } from "./sale-origin.js";
+import {
+  assertPosSaleTabsEnabled,
+  assertPosTabEnabled,
+} from "./pos-ui-settings.js";
 
 const { databaseId, collections } = appwriteConfig;
-const documentPermissions = [Permission.read(Role.users())];
+const documentPermissions = [];
 const paymentTypes = new Set(["cash", "qr", "card"]);
 const saleStatuses = new Set(["completed", "cancelled", "refunded"]);
 const DEFAULT_PAGE_SIZE = 25;
@@ -219,6 +224,7 @@ function toSale(document) {
     amountPaid: document.amountPaid,
     change: document.change || 0,
     senderName: document.senderName || "",
+    paymentLinkId: document.paymentLinkId || "",
     notes: document.notes || "",
     completedAt: document.completedAt || document.$createdAt,
     createdAt: document.$createdAt,
@@ -393,11 +399,14 @@ function getSaleSummary(sales) {
     qr: 0,
     card: 0,
   };
+  const channelTotals = { pos: 0, paymentLink: 0 };
 
   for (const sale of completed) {
     paymentTotals[sale.paymentMethodType] = roundMoney(
       (paymentTotals[sale.paymentMethodType] || 0) + sale.total,
     );
+    const channel = sale.paymentLinkId ? "paymentLink" : "pos";
+    channelTotals[channel] = roundMoney(channelTotals[channel] + sale.total);
   }
 
   const total = roundMoney(
@@ -413,20 +422,16 @@ function getSaleSummary(sales) {
       cancelled.reduce((sum, sale) => sum + (sale.total || 0), 0),
     ),
     paymentTotals,
+    channelTotals,
   };
 }
 
-function isInstitutePaymentItem(item) {
-  return (
-    item?.productSku === INSTITUTE_PAYMENT_SKU ||
-    text(item?.productName).toLowerCase().startsWith("mensualidad:")
-  );
-}
-
-function getIncomeCategoryTotals(sales) {
+export function getIncomeCategoryTotals(sales) {
   const totals = {
     monthly: { cash: 0, card: 0, qr: 0, total: 0 },
     products: { cash: 0, card: 0, qr: 0, total: 0 },
+    custom: { cash: 0, card: 0, qr: 0, total: 0 },
+    channels: { pos: 0, paymentLink: 0 },
   };
 
   for (const sale of sales) {
@@ -436,6 +441,10 @@ function getIncomeCategoryTotals(sales) {
     const paymentType = paymentTypes.has(sale.paymentMethodType)
       ? sale.paymentMethodType
       : "cash";
+    const channel = sale.paymentLinkId ? "paymentLink" : "pos";
+    totals.channels[channel] = roundMoney(
+      totals.channels[channel] + sale.total,
+    );
 
     if (items.length === 0) {
       totals.products[paymentType] = roundMoney(
@@ -447,7 +456,7 @@ function getIncomeCategoryTotals(sales) {
 
     for (const item of items) {
       const amount = roundMoney(item.subtotal);
-      const category = isInstitutePaymentItem(item) ? "monthly" : "products";
+      const category = saleItemCategory(item);
       totals[category][paymentType] = roundMoney(
         totals[category][paymentType] + amount,
       );
@@ -667,6 +676,7 @@ export async function listSales(context, filters = {}) {
     sales: paginatedSales.map((sale) => ({
       ...sale,
       items: itemsBySaleId.get(sale.id) || [],
+      origin: getSaleOrigin(sale, itemsBySaleId.get(sale.id) || []),
     })),
     summary: getSaleSummary(summarySales),
     page: queryFilters.page,
@@ -690,6 +700,7 @@ export async function getDailyIncomeReport(context, filters = {}) {
 
   const reportDate = formatLocalDate();
   const { databases } = createAdminClient(context.userAgent);
+  await assertPosTabEnabled(context, branchId, "daily", databases);
   const branchDocument = await databases.getDocument({
     databaseId,
     collectionId: collections.branches,
@@ -739,6 +750,7 @@ export async function getDailyIncomeReport(context, filters = {}) {
   const salesWithItems = sales.map((sale) => ({
     ...sale,
     items: itemsBySaleId.get(sale.id) || [],
+    origin: getSaleOrigin(sale, itemsBySaleId.get(sale.id) || []),
   }));
 
   return {
@@ -760,7 +772,13 @@ export async function getDailyIncomeReport(context, filters = {}) {
   };
 }
 
-export async function createSale(context, input) {
+export async function createSale(context, input, options = {}) {
+  if (!options.databases) {
+    const { withTransaction } = await import("../appwrite/transaction.js");
+    return withTransaction(context.userAgent, (databases) =>
+      createSale(context, input, { ...options, databases }),
+    );
+  }
   const branchId = text(input.branchId);
   const paymentMethodId = text(input.paymentMethodId);
   const rawItems = sanitizeSaleItems(input.items);
@@ -773,7 +791,11 @@ export async function createSale(context, input) {
     throw new ForbiddenError("No tienes acceso a esta sucursal.");
   }
 
-  const { databases } = createAdminClient(context.userAgent);
+  const databases =
+    options.databases || createAdminClient(context.userAgent).databases;
+  if (!options.paymentLinkId && !input.banecoQr?.paymentToken) {
+    await assertPosSaleTabsEnabled(context, branchId, rawItems, databases);
+  }
   const [branch, paymentMethod] = await Promise.all([
     databases.getDocument({
       databaseId,
@@ -798,6 +820,18 @@ export async function createSale(context, input) {
   const saleItems = [];
 
   for (const rawItem of rawItems) {
+    const reserved = options.reservedItems?.find(
+      (item) => item.productId === rawItem.productId,
+    );
+    if (reserved) {
+      saleItems.push({
+        ...reserved,
+        productName: reserved.name,
+        productSku: reserved.sku,
+        isReserved: true,
+      });
+      continue;
+    }
     if (rawItem.isCustom) {
       saleItems.push({
         productId: rawItem.productId,
@@ -876,15 +910,18 @@ export async function createSale(context, input) {
     await assertQrHasNotBeenUsed(databases, branchId, qrId);
 
     const qrPayment = paidToken
-      ? assertPosBanecoQrPaidToken({
-          branchId,
-          paymentMethodId,
-          qrId,
-          transactionId,
-          paymentToken,
-          paidToken,
-          expectedAmount: total,
-        })
+      ? assertPosBanecoQrPaidToken(
+          {
+            branchId,
+            paymentMethodId,
+            qrId,
+            transactionId,
+            paymentToken,
+            paidToken,
+            expectedAmount: total,
+          },
+          { allowExpired: options.allowExpiredQrToken === true },
+        )
       : await assertPosBanecoQrPaid(context, {
           branchId,
           paymentMethodId,
@@ -923,6 +960,9 @@ export async function createSale(context, input) {
       amountPaid,
       change: roundMoney(Math.max(amountPaid - total, 0)),
       senderName,
+      ...(text(options.paymentLinkId)
+        ? { paymentLinkId: text(options.paymentLinkId).slice(0, 36) }
+        : {}),
       notes,
       completedAt,
     },
@@ -947,21 +987,20 @@ export async function createSale(context, input) {
       permissions: documentPermissions,
     });
 
-    if (item.isCustom) {
+    if (item.isCustom || item.isReserved) {
       continue;
     }
 
-    const previousQty = item.stock.quantity;
-    const newQty = roundMoney(previousQty - item.quantity);
-
-    await databases.updateDocument({
+    const updatedStock = await databases.decrementDocumentAttribute({
       databaseId,
       collectionId: collections.stock,
       documentId: item.stock.$id,
-      data: {
-        quantity: newQty,
-      },
+      attribute: "quantity",
+      value: item.quantity,
+      min: 0,
     });
+    const newQty = updatedStock.quantity;
+    const previousQty = roundMoney(newQty + item.quantity);
 
     await databases.createDocument({
       databaseId,

@@ -18,13 +18,12 @@
  */
 
 import dotenv from "dotenv";
+import { getAuditCollectionSchema } from "../src/lib/pos/audit-schema.js";
 import {
   AppwriteException,
   Client,
   Databases,
   IndexType,
-  Permission,
-  Role,
   Storage,
 } from "node-appwrite";
 
@@ -48,9 +47,21 @@ const STORAGE_BUCKET_ID =
 const STORAGE_LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024;
 const STORAGE_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp"];
 const PRIVATE_COLLECTION_IDS = new Set([
+  "branches",
+  "categories",
+  "user_profiles",
+  "branch_payment_methods",
   "branch_payment_credentials",
+  "products",
+  "stock",
+  "stock_movements",
   "inventory_grants",
   "institute_api_settings",
+  "sales",
+  "sale_items",
+  process.env.COL_PAYMENT_LINKS || "payment_links",
+  process.env.COL_AUDIT_EVENTS || "audit_events",
+  process.env.COL_POS_UI_SETTINGS || "pos_ui_settings",
 ]);
 
 const stats = {
@@ -117,18 +128,8 @@ function requiredDefaultNote(attribute) {
   );
 }
 
-function collectionPermissions(collectionId) {
-  if (PRIVATE_COLLECTION_IDS.has(collectionId)) {
-    return [];
-  }
-
-  const permissions = [Permission.read(Role.users())];
-
-  if (collectionId === "sales" || collectionId === "sale_items") {
-    permissions.push(Permission.create(Role.users()));
-  }
-
-  return permissions;
+function collectionPermissions() {
+  return [];
 }
 
 function normalizeIndexType(type) {
@@ -138,6 +139,7 @@ function normalizeIndexType(type) {
 }
 
 const collections = [
+  getAuditCollectionSchema(process.env.COL_AUDIT_EVENTS || "audit_events"),
   {
     id: "branches",
     name: "Branches",
@@ -437,11 +439,17 @@ const collections = [
       { type: "float", key: "amountPaid", required: true },
       { type: "float", key: "change", required: true, default: 0 },
       { type: "string", key: "senderName", size: 160, required: false },
+      { type: "string", key: "paymentLinkId", size: 36, required: false },
       { type: "string", key: "notes", size: 300, required: false },
       { type: "datetime", key: "completedAt", required: false },
     ],
     indexes: [
       { key: "idx_saleNumber", type: "unique", attributes: ["saleNumber"] },
+      {
+        key: "idx_paymentLinkId",
+        type: "unique",
+        attributes: ["paymentLinkId"],
+      },
       { key: "idx_branchId", type: "key", attributes: ["branchId"] },
       { key: "idx_cashierId", type: "key", attributes: ["cashierId"] },
       { key: "idx_status", type: "key", attributes: ["status"] },
@@ -474,6 +482,88 @@ const collections = [
     indexes: [
       { key: "idx_saleId", type: "key", attributes: ["saleId"] },
       { key: "idx_productId", type: "key", attributes: ["productId"] },
+    ],
+  },
+  {
+    id: process.env.COL_POS_UI_SETTINGS || "pos_ui_settings",
+    name: "POS UI Settings",
+    attributes: [
+      { type: "string", key: "branchId", size: 36, required: false },
+      { type: "boolean", key: "products", required: true },
+      { type: "boolean", key: "monthly", required: true },
+      { type: "boolean", key: "custom", required: true },
+      { type: "boolean", key: "links", required: true },
+      { type: "boolean", key: "daily", required: true },
+      {
+        type: "string",
+        key: "updatedByUserId",
+        size: 36,
+        required: false,
+      },
+    ],
+    indexes: [
+      { key: "idx_branchId", type: "unique", attributes: ["branchId"] },
+    ],
+  },
+  {
+    id: process.env.COL_PAYMENT_LINKS || "payment_links",
+    name: "Payment Links",
+    attributes: [
+      { type: "string", key: "tokenHash", size: 64, required: true },
+      { type: "string", key: "encryptedToken", size: 1000, required: true },
+      { type: "string", key: "createdByUserId", size: 36, required: true },
+      { type: "string", key: "createdByName", size: 120, required: true },
+      { type: "string", key: "createdByEmail", size: 200, required: false },
+      { type: "string", key: "createdByProfileId", size: 36, required: false },
+      {
+        type: "enum",
+        key: "createdByRole",
+        elements: ["admin", "cashier"],
+        required: true,
+      },
+      { type: "string", key: "branchId", size: 36, required: true },
+      { type: "string", key: "branchName", size: 120, required: true },
+      { type: "string", key: "paymentMethodId", size: 36, required: true },
+      { type: "string", key: "paymentMethodLabel", size: 80, required: true },
+      {
+        type: "enum",
+        key: "status",
+        elements: [
+          "open",
+          "qr_pending",
+          "processing",
+          "payment_received",
+          "paid",
+          "expired",
+          "cancelled",
+          "failed",
+        ],
+        required: true,
+      },
+      { type: "string", key: "items", size: 30000, required: true },
+      { type: "integer", key: "itemCount", required: true },
+      { type: "float", key: "total", required: true },
+      { type: "datetime", key: "expiresAt", required: true },
+      { type: "string", key: "qrId", size: 100, required: false },
+      { type: "string", key: "qrImage", size: 50000, required: false },
+      { type: "string", key: "qrPaymentToken", size: 5000, required: false },
+      { type: "string", key: "transactionId", size: 50, required: false },
+      { type: "string", key: "senderName", size: 160, required: false },
+      { type: "string", key: "saleId", size: 36, required: false },
+      { type: "string", key: "saleNumber", size: 30, required: false },
+      { type: "datetime", key: "paidAt", required: false },
+      { type: "string", key: "lastError", size: 500, required: false },
+    ],
+    indexes: [
+      { key: "idx_tokenHash", type: "unique", attributes: ["tokenHash"] },
+      {
+        key: "idx_createdByUserId",
+        type: "key",
+        attributes: ["createdByUserId"],
+      },
+      { key: "idx_branchId", type: "key", attributes: ["branchId"] },
+      { key: "idx_status", type: "key", attributes: ["status"] },
+      { key: "idx_expiresAt", type: "key", attributes: ["expiresAt"] },
     ],
   },
 ];
@@ -547,7 +637,19 @@ async function ensureDatabase(databases, databaseId) {
 
 async function ensureStorageBucket(storage, bucketId) {
   try {
-    await storage.getBucket({ bucketId });
+    const bucket = await storage.getBucket({ bucketId });
+    await storage.updateBucket({
+      bucketId,
+      name: bucket.name,
+      permissions: [],
+      fileSecurity: true,
+      enabled: bucket.enabled !== false,
+      maximumFileSize: bucket.maximumFileSize,
+      allowedFileExtensions: bucket.allowedFileExtensions,
+      compression: bucket.compression,
+      encryption: bucket.encryption,
+      antivirus: bucket.antivirus,
+    });
     logSkipped(`bucket ${bucketId}`);
     return;
   } catch (error) {
@@ -561,7 +663,7 @@ async function ensureStorageBucket(storage, bucketId) {
     await storage.createBucket({
       bucketId,
       name: "POS Images",
-      permissions: [Permission.read(Role.users())],
+      permissions: [],
       fileSecurity: true,
       enabled: true,
       maximumFileSize: STORAGE_LOGO_MAX_SIZE_BYTES,
@@ -830,6 +932,15 @@ async function setupCollection(databases, databaseId, collection) {
 async function main() {
   requireEnv();
 
+  const only = process.argv
+    .find((argument) => argument.startsWith("--only="))
+    ?.slice(7);
+  const selectedCollections = only
+    ? collections.filter((collection) => collection.id === only)
+    : collections;
+  if (only && selectedCollections.length === 0)
+    throw new Error(`Coleccion desconocida: ${only}`);
+
   const databaseId = process.env.APPWRITE_DATABASE_ID;
   const client = getClient();
   const databases = new Databases(client);
@@ -844,10 +955,12 @@ async function main() {
     "// NOTA: node-appwrite@18 mantiene Databases/createCollection/create*Attribute/createIndex, aunque la API esta deprecada desde Appwrite 1.8 a favor de TablesDB.",
   );
 
-  await ensureDatabase(databases, databaseId);
-  await ensureStorageBucket(storage, STORAGE_BUCKET_ID);
+  if (!only) {
+    await ensureDatabase(databases, databaseId);
+    await ensureStorageBucket(storage, STORAGE_BUCKET_ID);
+  }
 
-  for (const collection of collections) {
+  for (const collection of selectedCollections) {
     await setupCollection(databases, databaseId, collection);
   }
 

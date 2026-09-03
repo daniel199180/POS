@@ -1,6 +1,7 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
 import { createAdminClient } from "../appwrite/admin.js";
 import { appwriteConfig } from "../appwrite/config.js";
+import { withAudit } from "./audit-writer.js";
 import {
   assertCanCreateProducts,
   assertCanManageCatalog,
@@ -8,7 +9,7 @@ import {
 } from "./auth-core.js";
 
 const { databaseId, collections } = appwriteConfig;
-const documentPermissions = [Permission.read(Role.users())];
+const documentPermissions = [];
 const productUnits = new Set(["unit", "kg", "liter", "meter"]);
 
 function text(value, fallback = "") {
@@ -185,7 +186,13 @@ async function getExistingStock(databases, productId, branchId) {
   return result.documents[0];
 }
 
-async function upsertProductStock(databases, productId, stockByBranch) {
+async function upsertProductStock(
+  databases,
+  context,
+  productId,
+  productName,
+  stockByBranch,
+) {
   const entries = Object.entries(stockByBranch);
 
   for (const [branchId, stock] of entries) {
@@ -198,23 +205,40 @@ async function upsertProductStock(databases, productId, stockByBranch) {
 
     const existing = await getExistingStock(databases, productId, branchId);
 
-    if (existing) {
-      await databases.updateDocument({
-        databaseId,
-        collectionId: collections.stock,
-        documentId: existing.$id,
-        data,
-      });
-      continue;
-    }
-
-    await databases.createDocument({
+    const branch = await databases.getDocument({
       databaseId,
-      collectionId: collections.stock,
-      documentId: ID.unique(),
-      data,
-      permissions: documentPermissions,
+      collectionId: collections.branches,
+      documentId: branchId,
     });
+    await withAudit(
+      databases,
+      context,
+      {
+        entityType: "stock",
+        entityId: productId,
+        entityName: productName,
+        action: "stock.adjust",
+        branchId,
+        branchName: branch.name,
+        before: existing || {},
+        after: data,
+      },
+      () =>
+        existing
+          ? databases.updateDocument({
+              databaseId,
+              collectionId: collections.stock,
+              documentId: existing.$id,
+              data,
+            })
+          : databases.createDocument({
+              databaseId,
+              collectionId: collections.stock,
+              documentId: ID.unique(),
+              data,
+              permissions: documentPermissions,
+            }),
+    );
   }
 }
 
@@ -263,13 +287,29 @@ export async function createBranch(context, input) {
   assertCanManageCatalog(context);
 
   const { databases } = createAdminClient(context.userAgent);
-  const branch = await databases.createDocument({
-    databaseId,
-    collectionId: collections.branches,
-    documentId: ID.unique(),
-    data: sanitizeBranchInput(input),
-    permissions: documentPermissions,
-  });
+  const data = sanitizeBranchInput(input);
+  const branchId = ID.unique();
+  const branch = await withAudit(
+    databases,
+    context,
+    {
+      entityType: "branch",
+      entityId: branchId,
+      entityName: data.name,
+      action: "branch.create",
+      branchId,
+      branchName: data.name,
+      after: data,
+    },
+    () =>
+      databases.createDocument({
+        databaseId,
+        collectionId: collections.branches,
+        documentId: branchId,
+        data,
+        permissions: documentPermissions,
+      }),
+  );
 
   await createDefaultPaymentMethods(databases, branch.$id);
 
@@ -280,12 +320,33 @@ export async function updateBranch(context, branchId, input) {
   assertCanManageCatalog(context);
 
   const { databases } = createAdminClient(context.userAgent);
-  const branch = await databases.updateDocument({
+  const before = await databases.getDocument({
     databaseId,
     collectionId: collections.branches,
     documentId: branchId,
-    data: sanitizeBranchInput(input),
   });
+  const data = sanitizeBranchInput(input);
+  const branch = await withAudit(
+    databases,
+    context,
+    {
+      entityType: "branch",
+      entityId: branchId,
+      entityName: before.name,
+      action: "branch.update",
+      branchId,
+      branchName: before.name,
+      before,
+      after: data,
+    },
+    () =>
+      databases.updateDocument({
+        databaseId,
+        collectionId: collections.branches,
+        documentId: branchId,
+        data,
+      }),
+  );
 
   return toBranch(branch);
 }
@@ -294,12 +355,32 @@ export async function deactivateBranch(context, branchId) {
   assertCanManageCatalog(context);
 
   const { databases } = createAdminClient(context.userAgent);
-  const branch = await databases.updateDocument({
+  const before = await databases.getDocument({
     databaseId,
     collectionId: collections.branches,
     documentId: branchId,
-    data: { isActive: false },
   });
+  const branch = await withAudit(
+    databases,
+    context,
+    {
+      entityType: "branch",
+      entityId: branchId,
+      entityName: before.name,
+      action: "branch.deactivate",
+      branchId,
+      branchName: before.name,
+      before,
+      after: { isActive: false },
+    },
+    () =>
+      databases.updateDocument({
+        databaseId,
+        collectionId: collections.branches,
+        documentId: branchId,
+        data: { isActive: false },
+      }),
+  );
 
   return toBranch(branch);
 }
@@ -335,16 +416,35 @@ export async function createProduct(context, input) {
 
   const { databases } = createAdminClient(context.userAgent);
   const { product, stockByBranch } = sanitizeProductInput(input);
-  const document = await databases.createDocument({
-    databaseId,
-    collectionId: collections.products,
-    documentId: ID.unique(),
-    data: product,
-    permissions: documentPermissions,
-  });
+  const productId = ID.unique();
+  const document = await withAudit(
+    databases,
+    context,
+    {
+      entityType: "product",
+      entityId: productId,
+      entityName: product.name,
+      action: "product.create",
+      after: product,
+    },
+    () =>
+      databases.createDocument({
+        databaseId,
+        collectionId: collections.products,
+        documentId: productId,
+        data: product,
+        permissions: documentPermissions,
+      }),
+  );
 
   if (context.canManageCatalog) {
-    await upsertProductStock(databases, document.$id, stockByBranch);
+    await upsertProductStock(
+      databases,
+      context,
+      document.$id,
+      product.name,
+      stockByBranch,
+    );
   }
 
   return document.$id;
@@ -355,14 +455,38 @@ export async function updateProduct(context, productId, input) {
 
   const { databases } = createAdminClient(context.userAgent);
   const { product, stockByBranch } = sanitizeProductInput(input);
-  await databases.updateDocument({
+  const before = await databases.getDocument({
     databaseId,
     collectionId: collections.products,
     documentId: productId,
-    data: product,
   });
+  await withAudit(
+    databases,
+    context,
+    {
+      entityType: "product",
+      entityId: productId,
+      entityName: before.name,
+      action: "product.update",
+      before,
+      after: product,
+    },
+    () =>
+      databases.updateDocument({
+        databaseId,
+        collectionId: collections.products,
+        documentId: productId,
+        data: product,
+      }),
+  );
 
-  await upsertProductStock(databases, productId, stockByBranch);
+  await upsertProductStock(
+    databases,
+    context,
+    productId,
+    product.name,
+    stockByBranch,
+  );
 
   return productId;
 }
@@ -371,12 +495,30 @@ export async function deactivateProduct(context, productId) {
   assertCanManageCatalog(context);
 
   const { databases } = createAdminClient(context.userAgent);
-  await databases.updateDocument({
+  const before = await databases.getDocument({
     databaseId,
     collectionId: collections.products,
     documentId: productId,
-    data: { isActive: false },
   });
+  await withAudit(
+    databases,
+    context,
+    {
+      entityType: "product",
+      entityId: productId,
+      entityName: before.name,
+      action: "product.deactivate",
+      before,
+      after: { isActive: false },
+    },
+    () =>
+      databases.updateDocument({
+        databaseId,
+        collectionId: collections.products,
+        documentId: productId,
+        data: { isActive: false },
+      }),
+  );
 
   return productId;
 }

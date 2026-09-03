@@ -11,19 +11,24 @@
     "deploy:functions": "node scripts/deploy-appwrite-functions.js",
     "seed:pos": "node scripts/seed-pos-demo.js",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:reports": "node --test tests/admin-reporting.test.js",
+    "test:payment-links": "node --test tests/payment-links-ui.test.js tests/payment-link-inventory.test.js",
+    "test:pos-tabs": "node --test tests/pos-tab-settings.test.js",
+    "security:harden": "node scripts/harden-appwrite-permissions.js --apply",
+    "test:security": "node --test tests/security-hardening.test.js"
   },
   "dependencies": {
-    "@tailwindcss/postcss": "^4.1.11",
+    "@tailwindcss/postcss": "^4.3.3",
     "appwrite": "^18.1.1",
     "dotenv": "^17.4.2",
     "lucide-react": "^1.21.0",
-    "next": "^16.2.9",
+    "next": "^16.3.4",
     "node-appwrite": "^18.0.0",
-    "postcss": "^8.5.6",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "tailwindcss": "^4.1.11"
+    "postcss": "^8.5.28",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "prettier": "3.6.2",

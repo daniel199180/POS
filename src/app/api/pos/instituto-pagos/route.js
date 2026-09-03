@@ -8,16 +8,14 @@ import {
 import { createAdminClient } from "@/lib/appwrite/admin";
 import { appwriteConfig } from "@/lib/appwrite/config";
 import { requestInstitutePayments } from "@/lib/pos/institute-payments";
+import { assertPosTabEnabled } from "@/lib/pos/pos-ui-settings";
+import {
+  filterInstituteLedgerByBranch,
+  normalizeInstituteBranchName,
+} from "@/lib/pos/institute-branch";
 
 function text(value) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeBranchName(value) {
-  return text(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 }
 
 function inputError(message, status = 400) {
@@ -72,8 +70,8 @@ async function assertPaymentBelongsToBranch(context, payload) {
   }
 
   if (
-    normalizeBranchName(paymentCourse.sucursalNombre) !==
-    normalizeBranchName(branch.name)
+    normalizeInstituteBranchName(paymentCourse.sucursalNombre) !==
+    normalizeInstituteBranchName(branch.name)
   ) {
     throw new ForbiddenError(
       `Esta mensualidad pertenece a la sucursal ${paymentCourse.sucursalNombre || "asignada en Control Instituto"}.`,
@@ -83,15 +81,35 @@ async function assertPaymentBelongsToBranch(context, payload) {
 
 export async function GET(request) {
   try {
-    await getCurrentUserContext({ redirectToLogin: false });
+    const context = await getCurrentUserContext({ redirectToLogin: false });
     const url = new URL(request.url);
     const ci = url.searchParams.get("ci") || "";
+    const branchId =
+      text(url.searchParams.get("branchId")) || text(context.profile?.branchId);
+
+    if (!branchId || !canAccessBranch(context, branchId)) {
+      throw new ForbiddenError("No tienes acceso a esta sucursal.");
+    }
+
+    await assertPosTabEnabled(context, branchId, "monthly");
+
+    const { databases } = createAdminClient(context.userAgent);
+    const branch = await databases.getDocument({
+      databaseId: appwriteConfig.databaseId,
+      collectionId: appwriteConfig.collections.branches,
+      documentId: branchId,
+    });
     const result = await requestInstitutePayments(
       `?ci=${encodeURIComponent(ci)}`,
       { method: "GET" },
     );
 
-    return NextResponse.json(result.body, { status: result.status });
+    return NextResponse.json(
+      result.status >= 200 && result.status < 300
+        ? filterInstituteLedgerByBranch(result.body, branch.name)
+        : result.body,
+      { status: result.status },
+    );
   } catch (error) {
     return getApiErrorResponse(error);
   }
@@ -110,6 +128,11 @@ export async function POST(request) {
     }
 
     await assertPaymentBelongsToBranch(context, payload);
+    await assertPosTabEnabled(
+      context,
+      text(payload.branchId) || text(context.profile?.branchId),
+      "monthly",
+    );
     const { branchId: _branchId, ...institutePayload } = payload;
     const result = await requestInstitutePayments("", {
       body: JSON.stringify(institutePayload),

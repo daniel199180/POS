@@ -1,9 +1,10 @@
-import { AppwriteException, ID, Permission, Query, Role } from "node-appwrite";
+import { AppwriteException, ID, Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
+import { withAudit } from "./audit-writer.js";
 
 const { databaseId, collections } = appwriteConfig;
-const documentPermissions = [Permission.read(Role.users())];
+const documentPermissions = [];
 const privateDocumentPermissions = [];
 export const STOCK_INCREASE_PERMISSION = "stock_increase";
 
@@ -296,54 +297,75 @@ export async function increaseProductStock(context, input = {}) {
   const previousQty = roundStock(stock?.quantity || 0);
   const newQty = roundStock(previousQty + quantity);
 
-  if (stock) {
-    await databases.updateDocument({
-      databaseId,
-      collectionId: collections.stock,
-      documentId: stock.$id,
-      data: { quantity: newQty },
-    });
-  } else {
-    await databases.createDocument({
-      databaseId,
-      collectionId: collections.stock,
-      documentId: ID.unique(),
-      data: {
+  const branch = await databases.getDocument({
+    databaseId,
+    collectionId: collections.branches,
+    documentId: branchId,
+  });
+  return withAudit(
+    databases,
+    context,
+    {
+      entityType: "stock",
+      entityId: productId,
+      entityName: product.name,
+      action: "stock.increase",
+      branchId,
+      branchName: branch.name,
+      before: { quantity: previousQty },
+      after: { quantity: newQty, reason: reason || "Subida de inventario" },
+    },
+    async () => {
+      if (stock) {
+        await databases.updateDocument({
+          databaseId,
+          collectionId: collections.stock,
+          documentId: stock.$id,
+          data: { quantity: newQty },
+        });
+      } else {
+        await databases.createDocument({
+          databaseId,
+          collectionId: collections.stock,
+          documentId: ID.unique(),
+          data: {
+            productId,
+            branchId,
+            quantity: newQty,
+            minStock: 0,
+          },
+          permissions: documentPermissions,
+        });
+      }
+
+      const movement = await databases.createDocument({
+        databaseId,
+        collectionId: collections.stockMovements,
+        documentId: ID.unique(),
+        data: {
+          productId,
+          branchId,
+          type: "in",
+          quantity,
+          previousQty,
+          newQty,
+          reason: reason || "Subida de inventario",
+          userId: context.user.id,
+          profileId: context.profile.id,
+          grantId: context.inventoryGrant?.id || "",
+        },
+        permissions: documentPermissions,
+      });
+
+      return {
         productId,
         branchId,
-        quantity: newQty,
-        minStock: 0,
-      },
-      permissions: documentPermissions,
-    });
-  }
-
-  const movement = await databases.createDocument({
-    databaseId,
-    collectionId: collections.stockMovements,
-    documentId: ID.unique(),
-    data: {
-      productId,
-      branchId,
-      type: "in",
-      quantity,
-      previousQty,
-      newQty,
-      reason: reason || "Subida de inventario",
-      userId: context.user.id,
-      profileId: context.profile.id,
-      grantId: context.inventoryGrant?.id || "",
+        previousQty,
+        newQty,
+        movementId: movement.$id,
+      };
     },
-    permissions: documentPermissions,
-  });
-
-  return {
-    productId,
-    branchId,
-    previousQty,
-    newQty,
-    movementId: movement.$id,
-  };
+  );
 }
 
 function toStockMovement(document, indexes) {

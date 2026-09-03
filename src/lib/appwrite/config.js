@@ -32,6 +32,9 @@ export const appwriteConfig = {
       process.env.NEXT_PUBLIC_COL_INVENTORY_GRANTS || "inventory_grants",
     sales: process.env.NEXT_PUBLIC_COL_SALES || "sales",
     saleItems: process.env.NEXT_PUBLIC_COL_SALE_ITEMS || "sale_items",
+    paymentLinks: process.env.COL_PAYMENT_LINKS || "payment_links",
+    auditEvents: process.env.COL_AUDIT_EVENTS || "audit_events",
+    posUiSettings: process.env.COL_POS_UI_SETTINGS || "pos_ui_settings",
   },
   storageBucket:
     process.env.NEXT_PUBLIC_APPWRITE_STORAGE_BUCKET || "pos_images",

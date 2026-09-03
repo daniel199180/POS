@@ -355,6 +355,25 @@ export default function SalesClient({
         })}
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-md border border-neutral-800 bg-neutral-900 p-4">
+          <p className="text-xs font-medium text-neutral-500 uppercase">
+            Origen: POS directo
+          </p>
+          <p className="mt-1 text-lg font-semibold">
+            {money(summary.channelTotals?.pos)}
+          </p>
+        </div>
+        <div className="rounded-md border border-amber-900 bg-amber-950/25 p-4">
+          <p className="text-xs font-medium text-amber-300 uppercase">
+            Origen: enlace de pago
+          </p>
+          <p className="mt-1 text-lg font-semibold">
+            {money(summary.channelTotals?.paymentLink)}
+          </p>
+        </div>
+      </div>
+
       {message ? (
         <div className="rounded-md border border-emerald-900 bg-emerald-950 px-4 py-3 text-sm text-emerald-200">
           {message}
@@ -369,14 +388,15 @@ export default function SalesClient({
 
       <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
         <div className="overflow-x-auto">
-          <div className="min-w-[1280px]">
-            <div className="grid grid-cols-[150px_150px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)_130px_120px_120px_210px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
+          <div className="min-w-[1450px]">
+            <div className="grid grid-cols-[150px_150px_minmax(140px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_130px_minmax(190px,1fr)_120px_120px_210px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
               <span>Orden</span>
               <span>Fecha</span>
               <span>Sucursal</span>
               <span>Cajero</span>
               <span>Pagador</span>
               <span>Pago</span>
+              <span>Origen</span>
               <span>Total</span>
               <span>Estado</span>
               <span className="text-right">Acciones</span>
@@ -386,7 +406,7 @@ export default function SalesClient({
               {sales.map((sale) => (
                 <div
                   key={sale.id}
-                  className="grid grid-cols-[150px_150px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)_130px_120px_120px_210px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
+                  className="grid grid-cols-[150px_150px_minmax(140px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_130px_minmax(190px,1fr)_120px_120px_210px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
                 >
                   <span className="font-medium text-neutral-100">
                     {sale.saleNumber}
@@ -405,6 +425,9 @@ export default function SalesClient({
                   </span>
                   <span className="text-neutral-300">
                     {sale.paymentMethodLabel}
+                  </span>
+                  <span className="truncate text-xs font-medium text-amber-300">
+                    {sale.origin?.label || "POS directo"}
                   </span>
                   <span className="font-semibold">{money(sale.total)}</span>
                   <span
@@ -508,7 +531,7 @@ export default function SalesClient({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
                 <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
                   <p className="text-xs font-medium text-neutral-500 uppercase">
                     Sucursal
@@ -533,6 +556,14 @@ export default function SalesClient({
                     {selectedSale.paymentMethodLabel ||
                       paymentLabels[selectedSale.paymentMethodType] ||
                       "-"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                  <p className="text-xs font-medium text-neutral-500 uppercase">
+                    Origen
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-amber-300">
+                    {selectedSale.origin?.label || "POS directo"}
                   </p>
                 </div>
                 <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">

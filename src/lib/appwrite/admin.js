@@ -31,6 +31,7 @@ export function createAdminClient(userAgent) {
   }
 
   return {
+    client,
     account: new Account(client),
     databases: new Databases(client),
     functions: new Functions(client),

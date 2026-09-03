@@ -44,14 +44,16 @@ function defineFunction({
   entrypoint,
   timeout = 15,
   scopes = writeScopes,
+  schedule = "",
+  execute = ["users"],
 }) {
   return {
     functionId,
     name,
     runtime,
-    execute: ["users"],
+    execute,
     events: [],
-    schedule: "",
+    schedule,
     timeout,
     enabled: true,
     logging: true,
@@ -62,6 +64,16 @@ function defineFunction({
 }
 
 const definitions = [
+  {
+    ...defineFunction({
+      functionId: "pos-payment-links-expire",
+      name: "POS - Vencimiento de enlaces",
+      entrypoint: "functions/pos-payment-links-expire/src/main.js",
+      timeout: 900,
+      schedule: "* * * * *",
+      execute: [],
+    }),
+  },
   defineFunction({
     functionId: appwriteFunctions.executors.sales,
     name: "POS - Sales Executor",
@@ -362,6 +374,10 @@ async function main() {
   const functions = getFunctions();
 
   for (const definition of definitions) {
+    const selected = (process.env.REGISTER_FUNCTIONS || "")
+      .split(",")
+      .filter(Boolean);
+    if (selected.length && !selected.includes(definition.functionId)) continue;
     await ensureFunction(functions, definition);
     await ensureFunctionVariables(functions, definition.functionId);
   }

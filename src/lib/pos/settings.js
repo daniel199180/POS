@@ -1,5 +1,6 @@
-import { AppwriteException, Permission, Role } from "node-appwrite";
+import { AppwriteException } from "node-appwrite";
 import { InputFile } from "node-appwrite/file";
+import { cache } from "react";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { ForbiddenError } from "./auth-core.js";
@@ -59,7 +60,23 @@ function toLogoSettings(file) {
 
 async function ensureLogoBucket(storage) {
   try {
-    await storage.getBucket({ bucketId: appwriteConfig.storageBucket });
+    const bucket = await storage.getBucket({
+      bucketId: appwriteConfig.storageBucket,
+    });
+    if ((bucket.$permissions || []).length > 0 || !bucket.fileSecurity) {
+      await storage.updateBucket({
+        bucketId: appwriteConfig.storageBucket,
+        name: bucket.name,
+        permissions: [],
+        fileSecurity: true,
+        enabled: bucket.enabled !== false,
+        maximumFileSize: bucket.maximumFileSize,
+        allowedFileExtensions: bucket.allowedFileExtensions,
+        compression: bucket.compression,
+        encryption: bucket.encryption,
+        antivirus: bucket.antivirus,
+      });
+    }
     return;
   } catch (error) {
     if (!isNotFound(error)) {
@@ -70,7 +87,7 @@ async function ensureLogoBucket(storage) {
   await storage.createBucket({
     bucketId: appwriteConfig.storageBucket,
     name: "POS Images",
-    permissions: [Permission.read(Role.users())],
+    permissions: [],
     fileSecurity: true,
     enabled: true,
     maximumFileSize: MAX_LOGO_SIZE_BYTES,
@@ -95,8 +112,8 @@ async function getLogoFile(storage) {
   }
 }
 
-export async function getLogoSettings(context) {
-  const { storage } = createAdminClient(context.userAgent);
+const readLogoSettings = cache(async (userAgent = "") => {
+  const { storage } = createAdminClient(userAgent);
   const logo = await getLogoFile(storage);
 
   return {
@@ -104,6 +121,10 @@ export async function getLogoSettings(context) {
     maxLogoSize: MAX_LOGO_SIZE_BYTES,
     allowedLogoTypes: Array.from(allowedLogoTypes),
   };
+});
+
+export async function getLogoSettings(context) {
+  return readLogoSettings(context.userAgent || "");
 }
 
 export async function getLogoImage(context) {
@@ -163,7 +184,7 @@ export async function uploadLogo(context, file) {
     bucketId: appwriteConfig.storageBucket,
     fileId: LOGO_FILE_ID,
     file: InputFile.fromBuffer(buffer, sanitizeFileName(file.name)),
-    permissions: [Permission.read(Role.users())],
+    permissions: [],
   });
 
   return {

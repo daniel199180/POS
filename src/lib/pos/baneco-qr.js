@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
+import { assertPosSaleTabsEnabled } from "./pos-ui-settings.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
 import {
   cancelBanecoQr,
@@ -119,7 +120,7 @@ function signQrPaymentPayload(payload) {
   return `${body}.${signature}`;
 }
 
-function verifyQrPaymentToken(token) {
+function verifyQrPaymentToken(token, { allowExpired = false } = {}) {
   const [body, signature] = text(token).split(".");
 
   if (!body || !signature) {
@@ -148,7 +149,10 @@ function verifyQrPaymentToken(token) {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
     const generatedAt = Date.parse(payload.generatedAt);
 
-    if (!generatedAt || Date.now() - generatedAt > QR_TOKEN_TTL_MS) {
+    if (
+      !generatedAt ||
+      (!allowExpired && Date.now() - generatedAt > QR_TOKEN_TTL_MS)
+    ) {
       throw inputError("El comprobante QR vencio. Genera un nuevo QR.");
     }
 
@@ -162,8 +166,8 @@ function verifyQrPaymentToken(token) {
   }
 }
 
-function assertQrPaymentToken(input, expected = {}) {
-  const tokenPayload = verifyQrPaymentToken(input.paymentToken);
+function assertQrPaymentToken(input, expected = {}, options = {}) {
+  const tokenPayload = verifyQrPaymentToken(input.paymentToken, options);
   const expectedAmount = roundMoney(expected.amount);
 
   if (expected.branchId && tokenPayload.branchId !== expected.branchId) {
@@ -552,7 +556,7 @@ function getPaymentDetail(status, keys) {
   return "";
 }
 
-export async function generatePosBanecoQr(context, input = {}) {
+export async function generatePosBanecoQr(context, input = {}, options = {}) {
   const {
     databases,
     branch,
@@ -562,6 +566,9 @@ export async function generatePosBanecoQr(context, input = {}) {
     credentials,
     credentialsNeedRotation,
   } = await getBanecoPaymentContext(context, input);
+  if (!options.reservedCart) {
+    await assertPosSaleTabsEnabled(context, branch.$id, input.items, databases);
+  }
   const [preparedCredentials, cart] = await Promise.all([
     warmPaymentContextCredentials({
       databases,
@@ -570,7 +577,8 @@ export async function generatePosBanecoQr(context, input = {}) {
       credentials,
       credentialsNeedRotation,
     }),
-    calculateCartTotal(databases, branch.$id, input.items),
+    options.reservedCart ||
+      calculateCartTotal(databases, branch.$id, input.items),
   ]);
 
   if (cart.total <= 0) {
@@ -614,18 +622,26 @@ export async function generatePosBanecoQr(context, input = {}) {
   };
 }
 
-export async function checkPosBanecoQrStatus(context, input = {}) {
+export async function checkPosBanecoQrStatus(
+  context,
+  input = {},
+  options = {},
+) {
   const qrId = text(input.qrId);
 
   if (!qrId) {
     throw inputError("El QR de Baneco es obligatorio.");
   }
 
-  const tokenPayload = assertQrPaymentToken(input, {
-    branchId: text(input.branchId),
-    paymentMethodId: text(input.paymentMethodId),
-    qrId,
-  });
+  const tokenPayload = assertQrPaymentToken(
+    input,
+    {
+      branchId: text(input.branchId),
+      paymentMethodId: text(input.paymentMethodId),
+      qrId,
+    },
+    options,
+  );
 
   const { branch, paymentMethod, config, credentials } =
     await getBanecoPaymentContext(context, input);
@@ -682,18 +698,22 @@ export async function checkPosBanecoQrStatus(context, input = {}) {
   return result;
 }
 
-export async function cancelPosBanecoQr(context, input = {}) {
+export async function cancelPosBanecoQr(context, input = {}, options = {}) {
   const qrId = text(input.qrId);
 
   if (!qrId) {
     throw inputError("El QR de Baneco es obligatorio.");
   }
 
-  const tokenPayload = assertQrPaymentToken(input, {
-    branchId: text(input.branchId),
-    paymentMethodId: text(input.paymentMethodId),
-    qrId,
-  });
+  const tokenPayload = assertQrPaymentToken(
+    input,
+    {
+      branchId: text(input.branchId),
+      paymentMethodId: text(input.paymentMethodId),
+      qrId,
+    },
+    options,
+  );
   const { branch, paymentMethod, config, credentials } =
     await getBanecoPaymentContext(context, input);
   const cancelled = await cancelBanecoQr({
@@ -745,14 +765,18 @@ export async function assertPosBanecoQrPaid(context, input = {}) {
   };
 }
 
-export function assertPosBanecoQrPaidToken(input = {}) {
+export function assertPosBanecoQrPaidToken(input = {}, options = {}) {
   const expectedAmount = roundMoney(input.expectedAmount);
-  const tokenPayload = assertQrPaymentToken(input, {
-    branchId: text(input.branchId),
-    paymentMethodId: text(input.paymentMethodId),
-    qrId: text(input.qrId),
-    amount: expectedAmount,
-  });
+  const tokenPayload = assertQrPaymentToken(
+    input,
+    {
+      branchId: text(input.branchId),
+      paymentMethodId: text(input.paymentMethodId),
+      qrId: text(input.qrId),
+      amount: expectedAmount,
+    },
+    options,
+  );
   const paidPayload = assertQrPaidToken(input, {
     branchId: text(input.branchId),
     paymentMethodId: text(input.paymentMethodId),

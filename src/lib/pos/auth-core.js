@@ -1,4 +1,4 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import {
   createAdminClient,
@@ -91,7 +91,7 @@ async function getOrCreateProfile(databases, user) {
         isActive: true,
         createdByUserId: user.id,
       },
-      permissions: [Permission.read(Role.users())],
+      permissions: [],
     });
 
     return normalizeProfile(profile, user);

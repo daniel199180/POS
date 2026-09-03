@@ -18,6 +18,7 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
+import PosTabsSettings from "./pos-tabs-settings";
 
 const paymentIcons = {
   cash: Banknote,
@@ -140,8 +141,12 @@ export default function PaymentsManagerClient({
   initialMethods,
   baneco,
   canManage,
+  initialTabSettingsByBranch,
 }) {
   const [methods, setMethods] = useState(initialMethods);
+  const [tabSettingsByBranch, setTabSettingsByBranch] = useState(
+    initialTabSettingsByBranch || {},
+  );
   const [selectedBranchId, setSelectedBranchId] = useState(
     branches[0]?.id || "",
   );
@@ -344,8 +349,7 @@ export default function PaymentsManagerClient({
 
       const updatedMethods = await refreshPayments(method.branchId);
       const refreshedMethod =
-        updatedMethods.find((item) => item.id === method.id) ||
-        payload.method;
+        updatedMethods.find((item) => item.id === method.id) || payload.method;
 
       if (form.id === method.id) {
         setForm(toForm(refreshedMethod));
@@ -504,6 +508,20 @@ export default function PaymentsManagerClient({
             {error}
           </div>
         ) : null}
+
+        <PosTabsSettings
+          key={selectedBranchId}
+          branchId={selectedBranchId}
+          branchName={selectedBranch?.name || "Sucursal"}
+          initialSettings={tabSettingsByBranch[selectedBranchId]}
+          canManage={canManage}
+          onChange={(settings) =>
+            setTabSettingsByBranch((current) => ({
+              ...current,
+              [selectedBranchId]: settings,
+            }))
+          }
+        />
 
         <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
           <div className="grid grid-cols-[minmax(220px,1fr)_150px_130px_120px_140px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">

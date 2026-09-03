@@ -8,6 +8,8 @@ import {
   Download,
   ExternalLink,
   GraduationCap,
+  Link2,
+  ListChecks,
   Loader2,
   Monitor,
   Minus,
@@ -20,6 +22,8 @@ import {
   X,
 } from "lucide-react";
 import InstitutePaymentsClient from "./instituto/institute-payments-client";
+import PaymentLinksClient from "./payment-links-client";
+import PaymentLinkCreator from "./payment-link-creator";
 import {
   CUSTOMER_DISPLAY_SESSION_STORAGE_KEY,
   CUSTOMER_DISPLAY_VERSION,
@@ -33,12 +37,33 @@ const PRODUCT_PAGE_SIZE = 20;
 const SALE_SUCCESS_RESET_DELAY_MS = 1800;
 const CUSTOM_CHARGE_SKU = "CUSTOM";
 const INSTITUTE_CHARGE_SKU = "MENSUALIDAD";
+const POS_TAB_ORDER = ["products", "monthly", "custom", "links", "daily"];
+const DEFAULT_POS_TABS = Object.fromEntries(
+  POS_TAB_ORDER.map((tabId) => [tabId, true]),
+);
+
+function normalizePosTabs(settings) {
+  const tabs = Object.fromEntries(
+    POS_TAB_ORDER.map((tabId) => [
+      tabId,
+      typeof settings?.[tabId] === "boolean" ? settings[tabId] : true,
+    ]),
+  );
+
+  return POS_TAB_ORDER.some((tabId) => tabs[tabId]) ? tabs : DEFAULT_POS_TABS;
+}
+
+function firstEnabledPosTab(tabs) {
+  return POS_TAB_ORDER.find((tabId) => tabs[tabId]) || "products";
+}
+
 const emptyDailyIncome = {
   date: "",
   generatedAt: "",
   salesCount: 0,
   totalRecords: 0,
   isLimited: false,
+  sales: [],
   summary: {
     total: 0,
     count: 0,
@@ -96,6 +121,29 @@ function formatReportDate(value = "") {
   }
 
   return `${day}/${month}/${year}`;
+}
+
+function formatSaleTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("es-BO", {
+    timeZone: "America/La_Paz",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function isMonthlySaleItem(item) {
+  return (
+    item?.productSku === INSTITUTE_CHARGE_SKU ||
+    String(item?.productName || "")
+      .trim()
+      .toLowerCase()
+      .startsWith("mensualidad:")
+  );
 }
 
 function getDownloadFilename(disposition = "") {
@@ -185,11 +233,13 @@ export default function DashboardClient({
   catalog,
   catalogError = "",
   settings = { logo: null },
+  tabSettingsByBranch = {},
 }) {
   const requestIdRef = useRef(0);
   const dailyIncomeRequestIdRef = useRef(0);
   const qrCheckInFlightRef = useRef(false);
   const qrAutoRegisterInFlightRef = useRef(false);
+  const paymentLinkCreationRef = useRef(false);
   const qrPaymentRef = useRef(null);
   const qrAutoGenerateKeyRef = useRef("");
   const qrWarmupKeysRef = useRef(new Set());
@@ -201,7 +251,17 @@ export default function DashboardClient({
   const [selectedBranchId, setSelectedBranchId] = useState(
     catalog.branches[0]?.id || "",
   );
-  const [activePosTab, setActivePosTab] = useState("products");
+  const enabledPosTabs = useMemo(
+    () => normalizePosTabs(tabSettingsByBranch[selectedBranchId]?.tabs),
+    [selectedBranchId, tabSettingsByBranch],
+  );
+  const [activePosTab, setActivePosTab] = useState(() =>
+    firstEnabledPosTab(
+      normalizePosTabs(
+        tabSettingsByBranch[catalog.branches[0]?.id || ""]?.tabs,
+      ),
+    ),
+  );
   const [institutePanelKey, setInstitutePanelKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [customChargeName, setCustomChargeName] = useState("");
@@ -214,6 +274,9 @@ export default function DashboardClient({
   const [saleError, setSaleError] = useState("");
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
   const [isCharging, setIsCharging] = useState(false);
+  const [isCreatingPaymentLink, setIsCreatingPaymentLink] = useState(false);
+  const [latestPaymentLink, setLatestPaymentLink] = useState(null);
+  const [paymentLinksRefreshKey, setPaymentLinksRefreshKey] = useState(0);
   const [qrPayment, setQrPayment] = useState(null);
   const [isQrPanelOpen, setIsQrPanelOpen] = useState(false);
   const [isGeneratingQr, setIsGeneratingQr] = useState(false);
@@ -238,7 +301,14 @@ export default function DashboardClient({
   const logoUrl = settings?.logo?.url || "";
   const qrLogoUrl = logoUrl && !hasQrLogoImageError ? logoUrl : "";
 
+  useEffect(() => {
+    if (!enabledPosTabs[activePosTab]) {
+      setActivePosTab(firstEnabledPosTab(enabledPosTabs));
+    }
+  }, [activePosTab, enabledPosTabs]);
+
   const syncInstituteCart = useCallback(({ ci, payments, studentName }) => {
+    if (paymentLinkCreationRef.current) return;
     setCart((current) => {
       const regularItems = current.filter((item) => !item.institutePayment);
       const instituteItems = payments.map((payment) => ({
@@ -286,7 +356,8 @@ export default function DashboardClient({
     selectedPayment?.config?.provider === "baneco";
   const isUnavailableQrPayment =
     selectedPayment?.type === "qr" && !isBanecoQrPayment;
-  const isBusy = isCharging || isGeneratingQr || isCheckingQr;
+  const isBusy =
+    isCharging || isGeneratingQr || isCheckingQr || isCreatingPaymentLink;
   const hasSaleState =
     cart.length > 0 ||
     Boolean(amountPaid) ||
@@ -310,6 +381,14 @@ export default function DashboardClient({
   const instituteCartPaymentIds = useMemo(
     () => instituteCartItems.map((item) => item.institutePayment.paymentId),
     [instituteCartItems],
+  );
+  const paymentLinkMethod = useMemo(
+    () =>
+      branchPaymentMethods.find(
+        (method) =>
+          method.type === "qr" && method.config?.provider === "baneco",
+      ) || null,
+    [branchPaymentMethods],
   );
 
   const totals = useMemo(() => {
@@ -411,6 +490,7 @@ export default function DashboardClient({
 
   useEffect(() => {
     resetPosSale({ clearSearch: true });
+    setLatestPaymentLink(null);
   }, [selectedBranchId]);
 
   useEffect(() => {
@@ -547,6 +627,7 @@ export default function DashboardClient({
       lastCompletedSale ||
       isGeneratingQr ||
       isCheckingQr ||
+      isCreatingPaymentLink ||
       isCharging
     ) {
       return;
@@ -571,6 +652,7 @@ export default function DashboardClient({
     isBanecoQrPayment,
     isCharging,
     isCheckingQr,
+    isCreatingPaymentLink,
     isGeneratingQr,
     lastCompletedSale,
     qrPayment,
@@ -784,6 +866,7 @@ export default function DashboardClient({
   }
 
   function addToCart(product) {
+    if (paymentLinkCreationRef.current) return;
     setSaleMessage("");
     setSaleError("");
     setLastCompletedSale(null);
@@ -818,6 +901,7 @@ export default function DashboardClient({
   }
 
   function addCustomChargeToCart() {
+    if (paymentLinkCreationRef.current) return;
     const name = customChargeName.trim();
     const price = Number(customChargePrice);
 
@@ -850,6 +934,7 @@ export default function DashboardClient({
   }
 
   function updateQuantity(productId, direction) {
+    if (paymentLinkCreationRef.current) return;
     setSaleMessage("");
     setSaleError("");
     setLastCompletedSale(null);
@@ -877,6 +962,7 @@ export default function DashboardClient({
   }
 
   function removeFromCart(productId) {
+    if (paymentLinkCreationRef.current) return;
     setSaleMessage("");
     setSaleError("");
     setLastCompletedSale(null);
@@ -1136,6 +1222,11 @@ export default function DashboardClient({
           branchId: selectedBranchId,
           paymentMethodId: selectedPayment.id,
           items: cart.map((item) => ({
+            category: item.institutePayment
+              ? "monthly"
+              : item.isCustom
+                ? "custom"
+                : "product",
             productId: item.id,
             quantity: item.quantity,
             isCustom: item.isCustom || false,
@@ -1304,7 +1395,7 @@ export default function DashboardClient({
     setSaleMessage("Pago QR cancelado. El carrito se conserva.");
 
     if (!currentQrPayment || !selectedPayment) {
-      return;
+      return true;
     }
 
     try {
@@ -1327,6 +1418,7 @@ export default function DashboardClient({
             "No se pudo cancelar el QR en Baneco. Genera un QR nuevo antes de cobrar.",
         );
       }
+      return true;
     } catch (error) {
       if (!qrPaymentRef.current) {
         qrPaymentRef.current = currentQrPayment;
@@ -1338,10 +1430,68 @@ export default function DashboardClient({
             "No se pudo cancelar el QR en Baneco. Genera un QR nuevo antes de cobrar.",
         );
       }
+      return false;
+    }
+  }
+
+  async function createCartPaymentLink() {
+    if (
+      paymentLinkCreationRef.current ||
+      isBusy ||
+      !paymentLinkMethod ||
+      cart.length === 0 ||
+      instituteCartItems.length > 0 ||
+      lastCompletedSale ||
+      qrPaymentRef.current?.status === "paid"
+    ) {
+      return;
+    }
+
+    paymentLinkCreationRef.current = true;
+    setIsCreatingPaymentLink(true);
+    setSaleError("");
+    setSaleMessage("");
+    try {
+      // Cancel an existing checkout QR before creating a separate payable link.
+      if (qrPaymentRef.current && !(await cancelQrPayment())) return;
+
+      const response = await fetch("/api/pos/payment-links", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          branchId: selectedBranchId,
+          paymentMethodId: paymentLinkMethod.id,
+          items: cart.map((item) => ({
+            productId: item.id,
+            name: item.name,
+            sku: item.sku,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            isCustom: item.isCustom,
+            category: "product",
+          })),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.link?.sharePath) {
+        throw new Error(payload.message || "No se pudo crear el enlace.");
+      }
+
+      resetPosSale();
+      setLatestPaymentLink(payload.link);
+      setPaymentLinksRefreshKey((current) => current + 1);
+      await loadProductsPage({ reset: true });
+    } catch (error) {
+      setSaleError(error.message || "No se pudo crear el enlace.");
+    } finally {
+      paymentLinkCreationRef.current = false;
+      setIsCreatingPaymentLink(false);
     }
   }
 
   async function completeSale() {
+    if (paymentLinkCreationRef.current) return;
     if (cart.length === 0 || !selectedPayment) {
       return;
     }
@@ -1390,6 +1540,11 @@ export default function DashboardClient({
   const dailyIncomeTotals = dailyIncome.summary?.incomeTotals || {};
   const dailyProductsIncome = dailyIncomeTotals.products?.total || 0;
   const dailyMonthlyIncome = dailyIncomeTotals.monthly?.total || 0;
+  const dailyCustomIncome = dailyIncomeTotals.custom?.total || 0;
+  const dailyPaymentLinkIncome = dailyIncomeTotals.channels?.paymentLink || 0;
+  const dailyTotal = dailyIncome.summary?.total || 0;
+  const dailySalesCount = dailyIncome.summary?.count || 0;
+  const dailySales = Array.isArray(dailyIncome.sales) ? dailyIncome.sales : [];
   const actionLabel = isGeneratingQr
     ? "Generando QR..."
     : isCheckingQr
@@ -1428,19 +1583,11 @@ export default function DashboardClient({
           ) : null}
 
           <div className="shrink-0 space-y-3 border-b border-neutral-800 pb-4">
-            <div className="text-center">
-              <p className="text-[11px] font-medium tracking-[0.18em] text-neutral-600 uppercase">
-                Cajero
-              </p>
-              <p className="mt-1 truncate text-sm font-medium text-neutral-300">
-                {user.name || "Cajero"}
-              </p>
-            </div>
-
             <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center">
               <div className="min-w-48">
                 <select
                   aria-label="Sucursal"
+                  disabled={isCreatingPaymentLink}
                   value={selectedBranchId}
                   onChange={(event) => setSelectedBranchId(event.target.value)}
                   className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm font-medium text-neutral-100 transition outline-none focus:border-neutral-300"
@@ -1453,32 +1600,14 @@ export default function DashboardClient({
                 </select>
               </div>
 
-              {activePosTab === "products" ? (
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-500" />
-                  <input
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    autoComplete="off"
-                    placeholder="Buscar por SKU, codigo o nombre"
-                    className="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-10 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
-                  />
-                  {searchTerm ? (
-                    <button
-                      type="button"
-                      onClick={() => setSearchTerm("")}
-                      className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-100"
-                      aria-label="Limpiar busqueda"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="flex-1 text-sm text-neutral-500">
-                  Cobro de mensualidades
-                </div>
-              )}
+              <div className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-4 py-2">
+                <p className="text-[10px] font-medium tracking-[0.16em] text-neutral-600 uppercase">
+                  Usuario en caja
+                </p>
+                <p className="truncate text-sm font-semibold text-neutral-200">
+                  {user.name || user.email || "Cajero"}
+                </p>
+              </div>
 
               <button
                 type="button"
@@ -1495,93 +1624,168 @@ export default function DashboardClient({
 
             <div
               aria-label="Secciones del punto de venta"
-              className="flex w-fit gap-1 rounded-md border border-neutral-800 bg-neutral-900 p-1"
+              className="flex w-fit max-w-full flex-wrap gap-1 rounded-md border border-neutral-800 bg-neutral-900 p-1"
               role="tablist"
             >
-              <button
-                aria-selected={activePosTab === "products"}
-                className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
-                  activePosTab === "products"
-                    ? "bg-emerald-400 text-emerald-950"
-                    : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-                }`}
-                onClick={() => setActivePosTab("products")}
-                role="tab"
-                type="button"
-              >
-                <Package className="size-4" />
-                Productos
-              </button>
-              <button
-                aria-selected={activePosTab === "monthly"}
-                className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
-                  activePosTab === "monthly"
-                    ? "bg-cyan-400 text-cyan-950"
-                    : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-                }`}
-                onClick={() => setActivePosTab("monthly")}
-                role="tab"
-                type="button"
-              >
-                <GraduationCap className="size-4" />
-                Mensualidades
-              </button>
+              {enabledPosTabs.products ? (
+                <button
+                  aria-selected={activePosTab === "products"}
+                  className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                    activePosTab === "products"
+                      ? "bg-emerald-400 text-emerald-950"
+                      : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                  }`}
+                  onClick={() => setActivePosTab("products")}
+                  role="tab"
+                  type="button"
+                >
+                  <Package className="size-4" />
+                  Productos
+                </button>
+              ) : null}
+              {enabledPosTabs.monthly ? (
+                <button
+                  aria-selected={activePosTab === "monthly"}
+                  className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                    activePosTab === "monthly"
+                      ? "bg-cyan-400 text-cyan-950"
+                      : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                  }`}
+                  onClick={() => setActivePosTab("monthly")}
+                  role="tab"
+                  type="button"
+                >
+                  <GraduationCap className="size-4" />
+                  Mensualidades
+                </button>
+              ) : null}
+              {enabledPosTabs.custom ? (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activePosTab === "custom"}
+                  onClick={() => setActivePosTab("custom")}
+                  className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${activePosTab === "custom" ? "bg-neutral-100 text-neutral-950" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"}`}
+                >
+                  <Plus className="size-4" />
+                  Cobro personalizado
+                </button>
+              ) : null}
+              {enabledPosTabs.links ? (
+                <button
+                  aria-selected={activePosTab === "links"}
+                  className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                    activePosTab === "links"
+                      ? "bg-amber-300 text-amber-950"
+                      : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                  }`}
+                  onClick={() => setActivePosTab("links")}
+                  role="tab"
+                  type="button"
+                >
+                  <Link2 className="size-4" />
+                  Cobro por enlace
+                </button>
+              ) : null}
+              {enabledPosTabs.daily ? (
+                <button
+                  aria-selected={activePosTab === "daily"}
+                  className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                    activePosTab === "daily"
+                      ? "bg-violet-400 text-violet-950"
+                      : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                  }`}
+                  onClick={() => {
+                    setActivePosTab("daily");
+                    loadDailyIncome({ branchId: selectedBranchId });
+                  }}
+                  role="tab"
+                  type="button"
+                >
+                  <ListChecks className="size-4" />
+                  Ventas del dia
+                </button>
+              ) : null}
             </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
-            {activePosTab === "products" ? (
-              <>
-                <div className="shrink-0 border-b border-emerald-900 bg-emerald-950/25 px-4 py-3">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_150px_auto] lg:items-end">
-                    <label className="text-xs font-medium text-neutral-400">
-                      Cobro personalizado
-                      <input
-                        value={customChargeName}
-                        onChange={(event) => {
-                          setCustomChargeName(event.target.value);
-                          setCustomChargeError("");
-                        }}
-                        placeholder="Nombre del cobro"
-                        className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
-                      />
-                    </label>
-                    <label className="text-xs font-medium text-neutral-400">
-                      Precio
-                      <input
-                        value={customChargePrice}
-                        onChange={(event) => {
-                          setCustomChargePrice(event.target.value);
-                          setCustomChargeError("");
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            addCustomChargeToCart();
-                          }
-                        }}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={addCustomChargeToCart}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-400 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300"
-                    >
-                      <Plus className="size-4" />
-                      Agregar cobro
-                    </button>
-                  </div>
-                  {customChargeError ? (
-                    <p className="mt-2 text-sm text-red-300">
-                      {customChargeError}
-                    </p>
-                  ) : null}
+            {enabledPosTabs.custom && activePosTab === "custom" ? (
+              <div className="shrink-0 border-b border-emerald-900 bg-emerald-950/25 px-4 py-3">
+                <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_150px_auto] lg:items-end">
+                  <label className="text-xs font-medium text-neutral-400">
+                    Cobro personalizado
+                    <input
+                      value={customChargeName}
+                      onChange={(event) => {
+                        setCustomChargeName(event.target.value);
+                        setCustomChargeError("");
+                      }}
+                      placeholder="Nombre del cobro"
+                      className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-neutral-400">
+                    Precio
+                    <input
+                      value={customChargePrice}
+                      onChange={(event) => {
+                        setCustomChargePrice(event.target.value);
+                        setCustomChargeError("");
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          addCustomChargeToCart();
+                        }
+                      }}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={addCustomChargeToCart}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-400 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300"
+                  >
+                    <Plus className="size-4" />
+                    Agregar cobro
+                  </button>
                 </div>
-
+                {customChargeError ? (
+                  <p className="mt-2 text-sm text-red-300">
+                    {customChargeError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {enabledPosTabs.products && activePosTab === "products" ? (
+              <>
+                <div className="shrink-0 border-b border-emerald-900 bg-emerald-950/25 p-3">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-emerald-400" />
+                    <input
+                      value={searchTerm}
+                      onChange={(event) => setSearchTerm(event.target.value)}
+                      autoComplete="off"
+                      placeholder="Buscar producto por SKU, codigo o nombre"
+                      aria-label="Buscar productos"
+                      className="h-10 w-full rounded-md border border-emerald-900 bg-neutral-950 px-10 pr-11 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-emerald-400"
+                    />
+                    {searchTerm ? (
+                      <button
+                        type="button"
+                        onClick={() => setSearchTerm("")}
+                        className="absolute top-1/2 right-2 grid size-7 -translate-y-1/2 place-items-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                        aria-label="Limpiar busqueda de productos"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <div className="min-h-0 flex-1 overflow-x-auto">
                   <div className="flex h-full min-w-[760px] flex-col">
                     <div className="grid grid-cols-[minmax(260px,1fr)_120px_120px_110px_110px] border-b border-emerald-900 bg-emerald-950/45 px-4 py-3 text-xs font-medium text-emerald-300 uppercase">
@@ -1657,22 +1861,300 @@ export default function DashboardClient({
                 </div>
               </>
             ) : null}
-            <div
-              className={
-                activePosTab === "monthly" ? "flex min-h-0 flex-1" : "hidden"
-              }
-            >
-              <InstitutePaymentsClient
-                embedded
-                cartPaymentIds={instituteCartPaymentIds}
-                key={institutePanelKey}
-                onCartChange={syncInstituteCart}
-                selectedBranchName={selectedBranch?.name || ""}
+            {enabledPosTabs.monthly ? (
+              <div
+                className={
+                  activePosTab === "monthly" ? "flex min-h-0 flex-1" : "hidden"
+                }
+              >
+                <InstitutePaymentsClient
+                  embedded
+                  cartPaymentIds={instituteCartPaymentIds}
+                  key={institutePanelKey}
+                  onCartChange={syncInstituteCart}
+                  selectedBranchId={selectedBranchId}
+                  selectedBranchName={selectedBranch?.name || ""}
+                />
+              </div>
+            ) : null}
+            {enabledPosTabs.links && activePosTab === "links" ? (
+              <PaymentLinksClient
+                key={selectedBranchId}
+                branchId={selectedBranchId}
+                branchName={selectedBranch?.name || "Sucursal"}
+                refreshKey={paymentLinksRefreshKey}
+                onCancelled={(link) => {
+                  loadProductsPage({ reset: true });
+                  setLatestPaymentLink((current) =>
+                    current?.id === link.id ? link : current,
+                  );
+                }}
               />
-            </div>
+            ) : null}
+            {enabledPosTabs.daily && activePosTab === "daily" ? (
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex shrink-0 flex-col gap-3 border-b border-violet-900 bg-violet-950/25 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-100">
+                      Registro de ventas del dia
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {selectedBranch?.name || "Sucursal"} ·{" "}
+                      {formatReportDate(dailyIncome.date)} ·{" "}
+                      {user.name || user.email}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={downloadDailyIncomePdf}
+                      disabled={
+                        !selectedBranchId ||
+                        isDownloadingDailyIncome ||
+                        isLoadingDailyIncome
+                      }
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-neutral-200 transition hover:border-neutral-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isDownloadingDailyIncome ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Download className="size-4" />
+                      )}
+                      PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        loadDailyIncome({ branchId: selectedBranchId })
+                      }
+                      disabled={isLoadingDailyIncome || !selectedBranchId}
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-violet-800 bg-violet-950 px-3 text-sm font-semibold text-violet-100 transition hover:border-violet-500 hover:bg-violet-900 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RotateCcw
+                        className={`size-4 ${
+                          isLoadingDailyIncome ? "animate-spin" : ""
+                        }`}
+                      />
+                      Actualizar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+                    <div className="rounded-md border border-violet-800 bg-violet-950/30 px-3 py-2">
+                      <p className="text-[11px] font-medium text-violet-200">
+                        Total ingresado
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome ? "..." : money(dailyTotal)}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-violet-800 bg-violet-950/30 px-3 py-2">
+                      <p className="text-[11px] font-medium text-violet-200">
+                        Ventas registradas
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome ? "..." : dailySalesCount}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2">
+                      <p className="text-[11px] font-medium text-neutral-500">
+                        Efectivo a entregar
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome ? "..." : money(dailyCashTotal)}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2">
+                      <p className="text-[11px] font-medium text-neutral-500">
+                        Cobros por QR
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome ? "..." : money(dailyQrTotal)}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-emerald-800 bg-emerald-950/30 px-3 py-2">
+                      <p className="text-[11px] font-medium text-emerald-300">
+                        Productos
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome
+                          ? "..."
+                          : money(dailyProductsIncome)}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-cyan-800 bg-cyan-950/30 px-3 py-2">
+                      <p className="text-[11px] font-medium text-cyan-300">
+                        Mensualidades
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome
+                          ? "..."
+                          : money(dailyMonthlyIncome)}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-violet-800 bg-violet-950/30 px-3 py-2">
+                      <p className="text-[11px] font-medium text-violet-300">
+                        Personalizados
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome
+                          ? "..."
+                          : money(dailyCustomIncome)}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2">
+                      <p className="text-[11px] font-medium text-amber-300">
+                        Por enlace
+                      </p>
+                      <p className="mt-0.5 text-base font-semibold">
+                        {isLoadingDailyIncome
+                          ? "..."
+                          : money(dailyPaymentLinkIncome)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-semibold text-neutral-100">
+                      Detalle de ventas
+                    </h2>
+                    <span className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs font-medium text-neutral-400">
+                      {dailySales.length} registros
+                    </span>
+                  </div>
+
+                  {dailyIncomeError ? (
+                    <p className="mt-3 rounded-md border border-red-900 bg-red-950 px-3 py-2 text-sm text-red-200">
+                      {dailyIncomeError}
+                    </p>
+                  ) : null}
+
+                  {isLoadingDailyIncome ? (
+                    <div className="py-10 text-center text-sm text-neutral-500">
+                      Cargando ventas del dia...
+                    </div>
+                  ) : null}
+
+                  {!isLoadingDailyIncome && dailySales.length === 0 ? (
+                    <div className="mt-3 rounded-md border border-dashed border-neutral-800 px-4 py-10 text-center text-sm text-neutral-500">
+                      Aun no registraste ventas en esta sucursal hoy.
+                    </div>
+                  ) : null}
+
+                  <div className="mt-2 space-y-2">
+                    {dailySales.map((sale) => {
+                      const saleItems = Array.isArray(sale.items)
+                        ? sale.items
+                        : [];
+                      const isCashSale = sale.paymentMethodType === "cash";
+
+                      return (
+                        <article
+                          key={sale.id}
+                          className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-950"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2">
+                            <div>
+                              <p className="text-sm font-semibold text-neutral-100">
+                                {sale.saleNumber}
+                              </p>
+                              <p className="mt-0.5 text-xs text-neutral-500">
+                                {formatSaleTime(sale.completedAt)} ·{" "}
+                                {sale.paymentMethodLabel ||
+                                  sale.paymentMethodType ||
+                                  "Metodo no indicado"}
+                              </p>
+                              <p className="mt-1 text-[11px] font-medium text-amber-300">
+                                Origen: {sale.origin?.label || "POS directo"}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-neutral-100">
+                                {money(sale.total)}
+                              </p>
+                              <p
+                                className={`mt-0.5 text-xs font-medium ${
+                                  isCashSale
+                                    ? "text-emerald-300"
+                                    : "text-cyan-300"
+                                }`}
+                              >
+                                {isCashSale ? "Efectivo" : "Pago digital"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1 p-2">
+                            {saleItems.map((item) => {
+                              const monthlyItem = isMonthlySaleItem(item);
+
+                              return (
+                                <div
+                                  key={item.id}
+                                  className={`flex items-center justify-between gap-3 rounded-md border px-2 py-1.5 ${
+                                    monthlyItem
+                                      ? "border-cyan-800 bg-cyan-950/30"
+                                      : "border-emerald-800 bg-emerald-950/30"
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate text-[13px] font-medium text-neutral-100">
+                                      {item.productName}
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] text-neutral-500">
+                                      {monthlyItem
+                                        ? "Mensualidad"
+                                        : item.productSku || "Producto"}{" "}
+                                      {" · "}
+                                      {item.quantity} x {money(item.unitPrice)}
+                                    </p>
+                                  </div>
+                                  <p className="shrink-0 text-[13px] font-semibold text-neutral-100">
+                                    {money(item.subtotal)}
+                                  </p>
+                                </div>
+                              );
+                            })}
+
+                            {saleItems.length === 0 ? (
+                              <p className="px-1 py-2 text-sm text-neutral-500">
+                                Esta venta no tiene detalle de items disponible.
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {isCashSale ? (
+                            <div className="grid grid-cols-2 gap-3 border-t border-neutral-800 px-3 py-2 text-xs">
+                              <p className="text-neutral-500">
+                                Recibido{" "}
+                                <span className="ml-1 font-semibold text-neutral-200">
+                                  {money(sale.amountPaid)}
+                                </span>
+                              </p>
+                              <p className="text-right text-neutral-500">
+                                Cambio{" "}
+                                <span className="ml-1 font-semibold text-neutral-200">
+                                  {money(sale.change)}
+                                </span>
+                              </p>
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          <div className="shrink-0 rounded-md border border-neutral-800 bg-neutral-900 p-4">
+          <div
+            className={`shrink-0 rounded-md border border-neutral-800 bg-neutral-900 p-4 ${
+              activePosTab === "daily" ? "hidden" : ""
+            }`}
+          >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs font-semibold tracking-[0.14em] text-neutral-500 uppercase">
@@ -1709,11 +2191,27 @@ export default function DashboardClient({
               </button>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
                 <p className="text-xs font-medium text-neutral-500">Efectivo</p>
                 <p className="mt-1 text-base font-semibold">
                   {isLoadingDailyIncome ? "..." : money(dailyCashTotal)}
+                </p>
+              </div>
+              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
+                <p className="text-xs font-medium text-violet-400">
+                  Ingresos personalizados
+                </p>
+                <p className="mt-1 text-base font-semibold">
+                  {isLoadingDailyIncome ? "..." : money(dailyCustomIncome)}
+                </p>
+              </div>
+              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
+                <p className="text-xs font-medium text-amber-300">
+                  Ingresos por enlace
+                </p>
+                <p className="mt-1 text-base font-semibold">
+                  {isLoadingDailyIncome ? "..." : money(dailyPaymentLinkIncome)}
                 </p>
               </div>
               <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
@@ -1856,6 +2354,7 @@ export default function DashboardClient({
                       key={method.id}
                       type="button"
                       onClick={() => setSelectedPaymentId(method.id)}
+                      disabled={isCreatingPaymentLink}
                       className={`flex h-16 flex-col items-center justify-center gap-1 rounded-md border text-xs font-semibold transition ${isSelected ? tone.active : tone.idle}`}
                     >
                       <Icon className="size-5" />
@@ -1865,6 +2364,20 @@ export default function DashboardClient({
                 })}
               </div>
             </div>
+
+            <PaymentLinkCreator
+              key={`${selectedBranchId}:${latestPaymentLink?.id || "new"}`}
+              cart={cart}
+              paymentMethod={paymentLinkMethod}
+              isBusy={
+                isBusy ||
+                Boolean(lastCompletedSale) ||
+                qrPayment?.status === "paid"
+              }
+              isCreating={isCreatingPaymentLink}
+              latestLink={latestPaymentLink}
+              onCreate={createCartPaymentLink}
+            />
 
             {selectedPayment?.type === "cash" ? (
               <div className="mt-4 grid grid-cols-2 gap-3">

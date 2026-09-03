@@ -5,11 +5,14 @@ import {
   getAuthErrorResponse,
   getSessionCookieOptions,
 } from "@/lib/appwrite/server";
+import { assertRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const email = String(body.email || "").trim().toLowerCase();
+    const email = String(body.email || "")
+      .trim()
+      .toLowerCase();
     const password = String(body.password || "");
 
     if (!email || !password) {
@@ -18,6 +21,20 @@ export async function POST(request) {
         { status: 400 },
       );
     }
+
+    if (email.length > 254 || password.length > 1024) {
+      return NextResponse.json(
+        { message: "Credenciales inválidas." },
+        { status: 400 },
+      );
+    }
+
+    assertRateLimit({
+      namespace: "login",
+      key: requestFingerprint(request, email),
+      limit: 10,
+      windowMs: 15 * 60 * 1000,
+    });
 
     const account = createAdminAccount(request.headers.get("user-agent"));
     const session = await account.createEmailPasswordSession({

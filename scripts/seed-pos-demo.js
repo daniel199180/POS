@@ -1,11 +1,5 @@
 import dotenv from "dotenv";
-import {
-  AppwriteException,
-  Client,
-  Databases,
-  Permission,
-  Role,
-} from "node-appwrite";
+import { AppwriteException, Client, Databases } from "node-appwrite";
 
 dotenv.config({ path: ".env" });
 dotenv.config({ path: ".env.local", override: true });
@@ -24,7 +18,7 @@ const collections = {
     "branch_payment_methods",
 };
 
-const documentPermissions = [Permission.read(Role.users())];
+const documentPermissions = [];
 
 const branches = [
   {

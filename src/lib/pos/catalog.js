@@ -151,7 +151,7 @@ export async function getProductsPage({
     databases.listDocuments({
       databaseId,
       collectionId: collections.stock,
-      queries: [Query.limit(500)],
+      queries: [Query.equal("branchId", branchId), Query.limit(500)],
     }),
   ]);
 

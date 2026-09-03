@@ -1,3 +1,5 @@
+import { getSaleOrigin, saleItemCategory } from "./sale-origin.js";
+
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const MARGIN_X = 42;
@@ -7,7 +9,7 @@ const SECTION_ROW_HEIGHT = 18;
 const MIN_ROW_HEIGHT = 22;
 const PRODUCT_LINE_HEIGHT = 9;
 const FOOTER_TOP_Y = 58;
-const FIRST_PAGE_TABLE_TOP = 592;
+const FIRST_PAGE_TABLE_TOP = 548;
 const NEXT_PAGE_TABLE_TOP = 658;
 
 function cleanText(value = "") {
@@ -122,6 +124,7 @@ function formatTime(value) {
 
 function pdfText(value) {
   const text = cleanText(value)
+    .replace(/·/g, "-")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\x20-\x7e]/g, "?");
@@ -183,13 +186,6 @@ function addTableHeader(lines, topY) {
   return y;
 }
 
-function isMonthlyItem(item) {
-  return (
-    cleanText(item?.productSku) === "MENSUALIDAD" ||
-    cleanText(item?.productName).toLowerCase().startsWith("mensualidad:")
-  );
-}
-
 function saleItemSummary(items) {
   if (items.length === 0) return "Sin detalle disponible";
 
@@ -204,7 +200,8 @@ function saleItemSummary(items) {
 }
 
 function getEntryDetailLines(entry) {
-  return wrapText(saleItemSummary(entry.items), 47);
+  const origin = getSaleOrigin(entry.sale, entry.items).label;
+  return wrapText(`${origin} | ${saleItemSummary(entry.items)}`, 47);
 }
 
 function getEntryRowHeight(detailLines) {
@@ -261,16 +258,14 @@ function itemAmount(item) {
 }
 
 function getEntriesForCategory(sales, category) {
-  const monthly = category === "monthly";
-
   return sales.flatMap((sale) => {
     const items = Array.isArray(sale.items) ? sale.items : [];
     const matchedItems = items.filter(
-      (item) => isMonthlyItem(item) === monthly,
+      (item) => saleItemCategory(item) === category,
     );
 
     if (matchedItems.length === 0) {
-      if (items.length > 0 || monthly) return [];
+      if (items.length > 0 || category !== "products") return [];
 
       return [{ sale, items: [], total: Number(sale.total) || 0 }];
     }
@@ -294,6 +289,10 @@ function getReportSections(sales) {
     {
       title: "Ingresos de mensualidades",
       entries: getEntriesForCategory(sales, "monthly"),
+    },
+    {
+      title: "Ingresos de cobros personalizados",
+      entries: getEntriesForCategory(sales, "custom"),
     },
   ].filter((section) => section.entries.length > 0);
 }
@@ -400,6 +399,8 @@ function buildPageContent(report, pageRows, pageIndex, pageCount) {
   if (isFirstPage) {
     const productsIncome = incomeTotals.products || {};
     const monthlyIncome = incomeTotals.monthly || {};
+    const customIncome = incomeTotals.custom || {};
+    const channels = incomeTotals.channels || {};
 
     addSummaryBox(
       lines,
@@ -432,6 +433,31 @@ function buildPageContent(report, pageRows, pageIndex, pageCount) {
       122,
       "Mensualidades QR",
       money(monthlyIncome.qr),
+    );
+    addSummaryBox(
+      lines,
+      42,
+      574,
+      122,
+      "Personalizados efectivo",
+      money(customIncome.cash),
+    );
+    addSummaryBox(
+      lines,
+      174,
+      574,
+      122,
+      "Personalizados QR",
+      money(customIncome.qr),
+    );
+    addSummaryBox(lines, 306, 574, 122, "POS directo", money(channels.pos));
+    addSummaryBox(
+      lines,
+      438,
+      574,
+      122,
+      "Enlaces de pago",
+      money(channels.paymentLink),
     );
     tableTop = FIRST_PAGE_TABLE_TOP;
   }

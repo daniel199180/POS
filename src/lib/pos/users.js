@@ -1,16 +1,18 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { assertCanManageUsers } from "./auth-core.js";
+import { withAudit } from "./audit-writer.js";
 import {
   createInventoryGrant,
   getActiveInventoryGrantMap,
+  getActiveInventoryGrant,
   revokeInventoryGrants,
   syncInventoryGrantBranches,
 } from "./inventory.js";
 
 const { databaseId, collections } = appwriteConfig;
-const documentPermissions = [Permission.read(Role.users())];
+const documentPermissions = [];
 const roles = new Set(["admin", "cashier"]);
 
 function text(value, fallback = "") {
@@ -355,15 +357,41 @@ export async function updateManagedUserInventoryPermission(
   const currentDocument = await getProfileDocument(databases, profileId);
   const currentProfile = toUserProfile(currentDocument);
 
-  if (enabled) {
-    await createInventoryGrant(databases, context, currentProfile, input);
-  } else {
-    await revokeInventoryGrants(databases, context, currentProfile.userId);
-  }
+  const previousGrant = await getActiveInventoryGrant(
+    databases,
+    currentProfile.userId,
+  );
+  return withAudit(
+    databases,
+    context,
+    {
+      entityType: "permission",
+      entityId: profileId,
+      entityName: currentProfile.name,
+      action: "permission.inventory",
+      before: {
+        canIncreaseInventory: Boolean(previousGrant),
+        allowedBranchIds: previousGrant?.branchIds || [],
+      },
+      after: {
+        canIncreaseInventory: enabled,
+        allowedBranchIds: enabled ? currentProfile.allowedBranchIds : [],
+      },
+    },
+    async () => {
+      if (enabled) {
+        await createInventoryGrant(databases, context, currentProfile, input);
+      } else {
+        await revokeInventoryGrants(databases, context, currentProfile.userId);
+      }
 
-  const [updated] = await withInventoryGrantStatus(databases, [currentProfile]);
+      const [updated] = await withInventoryGrantStatus(databases, [
+        currentProfile,
+      ]);
 
-  return updated;
+      return updated;
+    },
+  );
 }
 
 export async function updateManagedUserProductCreatePermission(
@@ -387,12 +415,25 @@ export async function updateManagedUserProductCreatePermission(
     );
   }
 
-  const document = await databases.updateDocument({
-    databaseId,
-    collectionId: collections.userProfiles,
-    documentId: profileId,
-    data: { canCreateProducts: enabled },
-  });
+  const document = await withAudit(
+    databases,
+    context,
+    {
+      entityType: "permission",
+      entityId: profileId,
+      entityName: currentProfile.name,
+      action: "permission.products",
+      before: currentProfile,
+      after: { canCreateProducts: enabled },
+    },
+    () =>
+      databases.updateDocument({
+        databaseId,
+        collectionId: collections.userProfiles,
+        documentId: profileId,
+        data: { canCreateProducts: enabled },
+      }),
+  );
 
   const [updated] = await withInventoryGrantStatus(databases, [
     toUserProfile(document),

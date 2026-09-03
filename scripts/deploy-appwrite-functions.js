@@ -25,6 +25,10 @@ const apiKey = process.env.APPWRITE_API_KEY;
 
 const allDeployments = [
   {
+    functionId: "pos-payment-links-expire",
+    entrypoint: "functions/pos-payment-links-expire/src/main.js",
+  },
+  {
     functionId: appwriteFunctions.executors.sales,
     entrypoint: "functions/pos-sales/src/main.js",
   },

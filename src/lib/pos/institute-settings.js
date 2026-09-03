@@ -42,7 +42,15 @@ function normalizeBaseUrl(value) {
     throw inputError("La URL de Control Instituto no es válida.");
   }
 
-  if (!['http:', 'https:'].includes(url.protocol)) {
+  if (url.username || url.password) {
+    throw inputError("La URL no debe incluir usuario ni contraseña.");
+  }
+
+  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
+    throw inputError("En producción la URL debe usar HTTPS.");
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
     throw inputError("La URL debe empezar con http:// o https://.");
   }
 
@@ -148,11 +156,15 @@ async function getConnectionForRequest(userAgent, input = null) {
   const document = await getStoredSettings(userAgent);
   if (document) {
     if (document.isEnabled === false) {
-      throw serviceUnavailable("La conexión con Control Instituto está desactivada en el POS.");
+      throw serviceUnavailable(
+        "La conexión con Control Instituto está desactivada en el POS.",
+      );
     }
     const token = readStoredToken(document);
     if (!document.baseUrl || !token) {
-      throw serviceUnavailable("La conexión con Control Instituto no está completa.");
+      throw serviceUnavailable(
+        "La conexión con Control Instituto no está completa.",
+      );
     }
     return { baseUrl: document.baseUrl, token };
   }
@@ -160,7 +172,9 @@ async function getConnectionForRequest(userAgent, input = null) {
   const legacyBaseUrl = text(process.env.INSTITUTE_PAYMENTS_API_BASE_URL);
   const legacyToken = text(process.env.INSTITUTE_PAYMENTS_API_TOKEN);
   if (!legacyBaseUrl || !legacyToken) {
-    throw serviceUnavailable("La conexión con Control Instituto no está configurada en este POS.");
+    throw serviceUnavailable(
+      "La conexión con Control Instituto no está configurada en este POS.",
+    );
   }
   return { baseUrl: normalizeBaseUrl(legacyBaseUrl), token: legacyToken };
 }
@@ -171,7 +185,10 @@ export async function getInstituteApiRequestConfig(userAgent) {
 
 export async function testInstituteConnection(context, input = {}) {
   assertCanManagePayments(context);
-  const { baseUrl, token } = await getConnectionForRequest(context.userAgent, input);
+  const { baseUrl, token } = await getConnectionForRequest(
+    context.userAgent,
+    input,
+  );
   let response;
 
   try {
@@ -181,7 +198,9 @@ export async function testInstituteConnection(context, input = {}) {
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
-    throw serviceUnavailable("No se pudo conectar con Control Instituto. Revisa la URL y que el servidor esté disponible.");
+    throw serviceUnavailable(
+      "No se pudo conectar con Control Instituto. Revisa la URL y que el servidor esté disponible.",
+    );
   }
 
   if (response.status === 200 || response.status === 404) {
@@ -189,5 +208,7 @@ export async function testInstituteConnection(context, input = {}) {
   }
 
   const body = await response.json().catch(() => ({}));
-  throw inputError(body.error || "Control Instituto rechazó la conexión. Revisa el token.");
+  throw inputError(
+    body.error || "Control Instituto rechazó la conexión. Revisa el token.",
+  );
 }

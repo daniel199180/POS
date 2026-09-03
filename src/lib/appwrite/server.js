@@ -43,6 +43,13 @@ export function getClearedSessionCookieOptions() {
 }
 
 export function getAuthErrorResponse(error) {
+  if (error?.status) {
+    return {
+      status: error.status,
+      body: { message: error.message || "No se pudo iniciar sesión." },
+    };
+  }
+
   if (error.message === "APPWRITE_API_KEY is required for server-side login.") {
     return {
       status: 500,

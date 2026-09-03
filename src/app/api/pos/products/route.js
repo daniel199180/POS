@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import {
-  getApiErrorResponse,
-  getCurrentUserContext,
-} from "@/lib/pos/auth";
+import { getApiErrorResponse, getCurrentUserContext } from "@/lib/pos/auth";
 import { PRODUCT_PAGE_SIZE, getProductsPage } from "@/lib/pos/catalog";
+import { assertPosTabEnabled } from "@/lib/pos/pos-ui-settings";
 
 export async function GET(request) {
   try {
@@ -20,6 +18,8 @@ export async function GET(request) {
         { status: 400 },
       );
     }
+
+    await assertPosTabEnabled(context, branchId, "products");
 
     const page = await getProductsPage({
       userAgent: context.userAgent,
