@@ -230,6 +230,7 @@ function buildCompletedSaleSnapshot({
 
 export default function DashboardClient({
   user,
+  profile,
   catalog,
   catalogError = "",
   settings = { logo: null },
@@ -1602,10 +1603,17 @@ export default function DashboardClient({
 
               <div className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-4 py-2">
                 <p className="text-[10px] font-medium tracking-[0.16em] text-neutral-600 uppercase">
-                  Usuario en caja
+                  Sesión de POS
                 </p>
                 <p className="truncate text-sm font-semibold text-neutral-200">
-                  {user.name || user.email || "Cajero"}
+                  {user.name || user.email || "Usuario"}
+                </p>
+                <p className="mt-0.5 text-xs text-emerald-300">
+                  {profile?.role === "super_admin"
+                    ? "Super administrador · Todas las sucursales"
+                    : profile?.role === "admin"
+                      ? "Administrador"
+                      : "Cajero"}
                 </p>
               </div>
 

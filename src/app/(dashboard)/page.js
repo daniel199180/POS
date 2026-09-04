@@ -40,6 +40,7 @@ export default async function Home() {
   return (
     <DashboardClient
       user={context.user}
+      profile={context.profile}
       catalog={catalog}
       catalogError={catalogError}
       settings={settings}

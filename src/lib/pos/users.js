@@ -162,7 +162,7 @@ async function sanitizeUserInput(
     throw inputError("Selecciona un rol válido.");
   }
   const role = normalizeUserRole(requestedRole);
-  const allowedBranchIds = normalizeBranchIds(
+  const requestedBranchIds = normalizeBranchIds(
     input.allowedBranchIds || input.branchIds || [input.branchId],
   );
   const isActive = typeof input.isActive === "boolean" ? input.isActive : true;
@@ -187,11 +187,16 @@ async function sanitizeUserInput(
     throw inputError("La contrasena debe tener al menos 8 caracteres.");
   }
 
+  const activeBranchIds = await getActiveBranchIds(databases);
+  // A super administrator always has access to every active branch. This also
+  // keeps the profile in sync when it is edited after a branch is added.
+  const allowedBranchIds =
+    role === USER_ROLES.SUPER_ADMIN ? [...activeBranchIds] : requestedBranchIds;
+
   if (allowedBranchIds.length === 0) {
     throw inputError("Selecciona al menos una sucursal.");
   }
 
-  const activeBranchIds = await getActiveBranchIds(databases);
   const invalidBranchIds = allowedBranchIds.filter(
     (branchId) => !activeBranchIds.has(branchId),
   );
@@ -210,7 +215,9 @@ async function sanitizeUserInput(
       name,
       email,
       role,
-      branchId: allowedBranchIds[0],
+      branchId:
+        requestedBranchIds.find((branchId) => activeBranchIds.has(branchId)) ||
+        allowedBranchIds[0],
       allowedBranchIds,
       isActive,
     },

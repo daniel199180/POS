@@ -102,7 +102,7 @@ function BrandBlock({ collapsed, settings }) {
 export default function DashboardShell({ user, profile, settings, children }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const visibleNavigation = navigation.filter((item) => {
     if (item.superAdminOnly) {
