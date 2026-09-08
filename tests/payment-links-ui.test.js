@@ -99,8 +99,11 @@ test("checkout with products enables link creation", () => {
   const html = renderCreator({
     cart: [{ id: "test-product", quantity: 2, price: 10 }],
     total: 20,
+    notes: "Pedido para llevar",
   });
   assert.match(html, /Generar enlace/);
+  assert.match(html, /Nota/);
+  assert.match(html, /Pedido para llevar/);
   assert.doesNotMatch(html, /disabled=""/);
   assert.doesNotMatch(html, /Enlace listo para compartir/);
 });
@@ -130,9 +133,15 @@ test("link creation is disabled while a checkout operation is in progress", () =
 
 test("a created link can be copied, shared and opened beside checkout", () => {
   const html = renderCreator({
-    latestLink: { id: "test-link", status: "open", sharePath: "/pagar/test" },
+    latestLink: {
+      id: "test-link",
+      status: "open",
+      sharePath: "/pagar/test",
+      notes: "Mesa 4",
+    },
   });
   assert.match(html, /Enlace listo para compartir/);
+  assert.match(html, /Mesa 4/);
   assert.ok(buttons(html).some((button) => button.label === "Copiar"));
   assert.ok(buttons(html).some((button) => button.label === "Compartir"));
   assert.match(html, /href="\/pagar\/test"/);
@@ -184,7 +193,7 @@ test("POS places the link creator immediately after cash and QR buttons", () => 
   assert.ok(
     checkout.indexOf("payment-link-creator") < checkout.indexOf("Recibido"),
   );
-  assert.match(html, /Usuario en caja/);
+  assert.match(html, /Sesión de POS/);
   assert.match(html, /Buscar producto por SKU, codigo o nombre/);
 });
 
@@ -225,4 +234,25 @@ test("public payment page includes the payment bell and compact mobile styles", 
   );
   assert.match(source, /payment-success\.mp3/);
   assert.match(source, /px-3 py-4/);
+  assert.match(source, /link\.notes/);
+});
+
+test("payment link notes are sent to the API and persisted", () => {
+  const dashboardSource = readFileSync(
+    new URL("../src/app/(dashboard)/dashboard-client.js", import.meta.url),
+    "utf8",
+  );
+  const linkSource = readFileSync(
+    new URL("../src/lib/pos/payment-links.js", import.meta.url),
+    "utf8",
+  );
+  const setupSource = readFileSync(
+    new URL("../scripts/setup-database.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(dashboardSource, /notes: paymentLinkNotes/);
+  assert.match(linkSource, /const notes = text\(input\.notes\)\.slice\(0, 300\)/);
+  assert.match(linkSource, /notes,/);
+  assert.match(setupSource, /key: "notes", size: 300/);
 });

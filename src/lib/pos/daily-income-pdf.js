@@ -201,7 +201,17 @@ function saleItemSummary(items) {
 
 function getEntryDetailLines(entry) {
   const origin = getSaleOrigin(entry.sale, entry.items).label;
-  return wrapText(`${origin} | ${saleItemSummary(entry.items)}`, 47);
+  const detailLines = wrapText(`${origin} | ${saleItemSummary(entry.items)}`, 47);
+  const notes = cleanText(entry.sale?.notes);
+
+  if (!notes) {
+    return detailLines;
+  }
+
+  return [
+    ...detailLines,
+    ...wrapText(`Nota: ${notes}`, 47).slice(0, 2),
+  ];
 }
 
 function getEntryRowHeight(detailLines) {

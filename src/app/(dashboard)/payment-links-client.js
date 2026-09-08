@@ -181,6 +181,11 @@ export default function PaymentLinksClient({
                         .map((item) => `${item.quantity}× ${item.name}`)
                         .join(" · ")}
                     </p>
+                    {link.notes ? (
+                      <p className="mt-2 line-clamp-2 text-xs text-neutral-300">
+                        Nota: {link.notes}
+                      </p>
+                    ) : null}
                     <p className="mt-2 flex items-center gap-1 text-[11px] text-neutral-600">
                       <CalendarClock className="size-3.5" />
                       {new Date(link.createdAt).toLocaleString("es-BO")}

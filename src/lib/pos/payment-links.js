@@ -109,6 +109,7 @@ function toPaymentLink(
     paymentMethodId: document.paymentMethodId,
     paymentMethodLabel: document.paymentMethodLabel,
     createdByName: document.createdByName,
+    notes: document.notes || "",
     status: document.status,
     items,
     itemCount: document.itemCount,
@@ -398,6 +399,7 @@ export async function createPaymentLink(context, input = {}) {
   const items = await canonicalizeItems(databases, branchId, input.items);
   await assertPosSaleTabsEnabled(context, branchId, items, databases);
   const total = money(items.reduce((sum, item) => sum + item.subtotal, 0));
+  const notes = text(input.notes).slice(0, 300);
 
   if (total <= 0) {
     throw inputError("El total del enlace debe ser mayor a cero.");
@@ -429,6 +431,7 @@ export async function createPaymentLink(context, input = {}) {
           branchName: branch.name,
           paymentMethodId,
           paymentMethodLabel: paymentMethod.label,
+          notes,
           status: "open",
           items: JSON.stringify({ inventoryStatus: "reserved", items }),
           itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
@@ -657,7 +660,10 @@ export async function reconcilePaymentLink(
             branchId: link.branchId,
             paymentMethodId: link.paymentMethodId,
             items: toSaleItems(parseItems(link.items)),
-            notes: `Cobro por enlace ${link.$id}`,
+            notes: [`Cobro por enlace ${link.$id}`, text(link.notes)]
+              .filter(Boolean)
+              .join(" | ")
+              .slice(0, 300),
             banecoQr: {
               ...qrInput,
               transactionId: link.transactionId,

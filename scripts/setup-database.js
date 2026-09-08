@@ -525,6 +525,7 @@ const collections = [
       { type: "string", key: "branchName", size: 120, required: true },
       { type: "string", key: "paymentMethodId", size: 36, required: true },
       { type: "string", key: "paymentMethodLabel", size: 80, required: true },
+      { type: "string", key: "notes", size: 300, required: false },
       {
         type: "enum",
         key: "status",

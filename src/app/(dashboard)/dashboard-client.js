@@ -277,6 +277,7 @@ export default function DashboardClient({
   const [isCharging, setIsCharging] = useState(false);
   const [isCreatingPaymentLink, setIsCreatingPaymentLink] = useState(false);
   const [latestPaymentLink, setLatestPaymentLink] = useState(null);
+  const [paymentLinkNotes, setPaymentLinkNotes] = useState("");
   const [paymentLinksRefreshKey, setPaymentLinksRefreshKey] = useState(0);
   const [qrPayment, setQrPayment] = useState(null);
   const [isQrPanelOpen, setIsQrPanelOpen] = useState(false);
@@ -1047,6 +1048,7 @@ export default function DashboardClient({
     setSaleMessage("");
     setSaleError("");
     setLastCompletedSale(null);
+    setPaymentLinkNotes("");
     qrPaymentRef.current = null;
     qrAutoGenerateKeyRef.current = "";
     setQrPayment(null);
@@ -1463,6 +1465,7 @@ export default function DashboardClient({
         body: JSON.stringify({
           branchId: selectedBranchId,
           paymentMethodId: paymentLinkMethod.id,
+          notes: paymentLinkNotes,
           items: cart.map((item) => ({
             productId: item.id,
             name: item.name,
@@ -2131,6 +2134,11 @@ export default function DashboardClient({
                                 Esta venta no tiene detalle de items disponible.
                               </p>
                             ) : null}
+                            {sale.notes ? (
+                              <p className="rounded-md border border-amber-900 bg-amber-950/25 px-2 py-1.5 text-xs text-amber-100">
+                                Nota: {sale.notes}
+                              </p>
+                            ) : null}
                           </div>
 
                           {isCashSale ? (
@@ -2384,6 +2392,8 @@ export default function DashboardClient({
               }
               isCreating={isCreatingPaymentLink}
               latestLink={latestPaymentLink}
+              notes={paymentLinkNotes}
+              onNotesChange={setPaymentLinkNotes}
               onCreate={createCartPaymentLink}
             />
 

@@ -101,7 +101,11 @@ test("daily report separates custom income and link channel, including PDF label
       items: [item("m", 20, { productSku: "MENSUALIDAD" })],
     },
     {
-      ...sale("c", 30, { paymentMethodType: "qr", paymentLinkId: "link" }),
+      ...sale("c", 30, {
+        paymentMethodType: "qr",
+        paymentLinkId: "link",
+        notes: "Mesa 4, pedido para llevar",
+      }),
       items: [item("c", 30, { productSku: "CUSTOM", productId: "custom-1" })],
     },
   ];
@@ -124,6 +128,7 @@ test("daily report separates custom income and link channel, including PDF label
   assert.match(decoded, /Personalizados QR/);
   assert.match(decoded, /Enlaces de pago/);
   assert.match(decoded, /Enlace de pago - Cobro personalizado/);
+  assert.match(decoded, /Nota: Mesa 4, pedido para llevar/);
 });
 
 test("payment origin distinguishes channel and charge category", () => {

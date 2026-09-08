@@ -9,6 +9,8 @@ export default function PaymentLinkCreator({
   isBusy = false,
   isCreating = false,
   latestLink = null,
+  notes = "",
+  onNotesChange,
   onCreate,
 }) {
   const [shareError, setShareError] = useState("");
@@ -85,12 +87,27 @@ export default function PaymentLinkCreator({
       {unavailableReason && cart.length > 0 ? (
         <p className="mt-2 text-xs text-neutral-500">{unavailableReason}</p>
       ) : null}
+      <label className="mt-3 block text-xs font-medium text-neutral-400">
+        Nota
+        <textarea
+          value={notes}
+          onChange={(event) => onNotesChange?.(event.target.value.slice(0, 300))}
+          disabled={isBusy || isCreating}
+          maxLength={300}
+          rows={3}
+          placeholder="Ej. Reserva mesa 4, pedido para llevar"
+          className="mt-1 min-h-20 w-full resize-none rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-amber-400 disabled:opacity-60"
+        />
+      </label>
 
       {showLatestLink ? (
         <div className="mt-3 rounded-md border border-amber-800 bg-amber-950/30 p-3">
           <p className="text-xs font-semibold text-amber-200">
             Enlace listo para compartir
           </p>
+          {latestLink.notes ? (
+            <p className="mt-1 text-xs text-amber-100">{latestLink.notes}</p>
+          ) : null}
           <input
             aria-label="Enlace de pago generado"
             readOnly

@@ -221,6 +221,11 @@ export default function PaymentPageClient({ token }) {
               <Clock3 className="size-4" />
               Valido hasta {new Date(link.expiresAt).toLocaleString("es-BO")}
             </p>
+            {link.notes ? (
+              <p className="mt-3 rounded-md border border-cyan-900 bg-cyan-950/30 px-3 py-2 text-sm text-cyan-100">
+                {link.notes}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2 p-2.5 sm:p-4">
