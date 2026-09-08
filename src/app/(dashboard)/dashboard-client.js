@@ -1486,8 +1486,10 @@ export default function DashboardClient({
       setLatestPaymentLink(payload.link);
       setPaymentLinksRefreshKey((current) => current + 1);
       await loadProductsPage({ reset: true });
+      return payload.link;
     } catch (error) {
       setSaleError(error.message || "No se pudo crear el enlace.");
+      return null;
     } finally {
       paymentLinkCreationRef.current = false;
       setIsCreatingPaymentLink(false);
@@ -2382,7 +2384,6 @@ export default function DashboardClient({
             </div>
 
             <PaymentLinkCreator
-              key={`${selectedBranchId}:${latestPaymentLink?.id || "new"}`}
               cart={cart}
               paymentMethod={paymentLinkMethod}
               isBusy={
@@ -2393,6 +2394,7 @@ export default function DashboardClient({
               isCreating={isCreatingPaymentLink}
               latestLink={latestPaymentLink}
               notes={paymentLinkNotes}
+              error={saleError}
               onNotesChange={setPaymentLinkNotes}
               onCreate={createCartPaymentLink}
             />

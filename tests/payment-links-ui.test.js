@@ -102,8 +102,7 @@ test("checkout with products enables link creation", () => {
     notes: "Pedido para llevar",
   });
   assert.match(html, /Generar enlace/);
-  assert.match(html, /Nota/);
-  assert.match(html, /Pedido para llevar/);
+  assert.doesNotMatch(html, /Ej\. Reserva mesa 4, pedido para llevar/);
   assert.doesNotMatch(html, /disabled=""/);
   assert.doesNotMatch(html, /Enlace listo para compartir/);
 });
@@ -131,7 +130,7 @@ test("link creation is disabled while a checkout operation is in progress", () =
   assert.match(buttons(html)[0].html, /disabled=""/);
 });
 
-test("a created link can be copied, shared and opened beside checkout", () => {
+test("generated links stay out of checkout until the payment-link popup opens", () => {
   const html = renderCreator({
     latestLink: {
       id: "test-link",
@@ -140,11 +139,22 @@ test("a created link can be copied, shared and opened beside checkout", () => {
       notes: "Mesa 4",
     },
   });
-  assert.match(html, /Enlace listo para compartir/);
-  assert.match(html, /Mesa 4/);
-  assert.ok(buttons(html).some((button) => button.label === "Copiar"));
-  assert.ok(buttons(html).some((button) => button.label === "Compartir"));
-  assert.match(html, /href="\/pagar\/test"/);
+  assert.doesNotMatch(html, /Enlace listo para compartir/);
+  assert.ok(buttons(html).every((button) => button.label !== "Copiar"));
+  assert.ok(buttons(html).every((button) => button.label !== "Compartir"));
+});
+
+test("the link popup implementation includes note, generate and cancel controls", () => {
+  const source = readFileSync(
+    new URL("../src/app/(dashboard)/payment-link-creator.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /role="dialog"/);
+  assert.match(source, /Nota <span[^>]*>\(opcional\)<\/span>/);
+  assert.match(source, />\s*Cancelar\s*</);
+  assert.match(source, /"Generar"/);
+  assert.match(source, /Enlace de pago listo para compartir/);
+  assert.match(source, /onClick=\{closeDialog\}/);
 });
 
 test("cancelled links are no longer offered for sharing in checkout", () => {
@@ -252,7 +262,10 @@ test("payment link notes are sent to the API and persisted", () => {
   );
 
   assert.match(dashboardSource, /notes: paymentLinkNotes/);
-  assert.match(linkSource, /const notes = text\(input\.notes\)\.slice\(0, 300\)/);
+  assert.match(
+    linkSource,
+    /const notes = text\(input\.notes\)\.slice\(0, 300\)/,
+  );
   assert.match(linkSource, /notes,/);
   assert.match(setupSource, /key: "notes", size: 300/);
 });

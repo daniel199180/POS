@@ -37,7 +37,10 @@ const REQUIRED_ENV = [
   "APPWRITE_DATABASE_ID",
 ];
 
-const ATTRIBUTE_TIMEOUT_MS = 60_000;
+// Appwrite may take more than one minute to apply a new attribute on an
+// existing collection. Keep the migration waiting instead of reporting a
+// false failure while the schema change is still being applied remotely.
+const ATTRIBUTE_TIMEOUT_MS = 180_000;
 const ATTRIBUTE_POLL_MS = 1_500;
 const OPERATION_DELAY_MS = 250;
 const STORAGE_BUCKET_ID =
