@@ -121,7 +121,7 @@ export default function PaymentLinkCreator({
       </button>
       {!unavailableReason ? (
         <p className="mt-2 text-xs text-neutral-500">
-          Vigencia: 5 horas. Reserva el stock hasta el pago o vencimiento.
+          Vigencia: 14 dias. Reserva el stock hasta el pago o vencimiento.
         </p>
       ) : null}
       {unavailableReason && cart.length > 0 ? (

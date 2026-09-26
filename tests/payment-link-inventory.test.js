@@ -107,8 +107,8 @@ function fixture({
   };
 }
 
-test("new payment links have a five-hour lifetime", () =>
-  assert.equal(LINK_TTL_MS, 18_000_000));
+test("new payment links have a fourteen-day lifetime", () =>
+  assert.equal(LINK_TTL_MS, 1_209_600_000));
 test("expired unpaid link restores stock exactly once", async () => {
   const f = fixture();
   await f.run();

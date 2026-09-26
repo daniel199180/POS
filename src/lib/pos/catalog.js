@@ -2,6 +2,7 @@ import { Query } from "node-appwrite";
 import { createAdminClient } from "../appwrite/admin.js";
 import { appwriteConfig } from "../appwrite/config.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
+import { PAYMENT_VALIDITY_DAYS } from "./payment-validity.js";
 
 const { databaseId, collections } = appwriteConfig;
 export const PRODUCT_PAGE_SIZE = 20;
@@ -32,7 +33,7 @@ function getPaymentConfig(type, value) {
   return {
     provider: config.provider === "baneco" ? "baneco" : "manual",
     currency: "BOB",
-    dueDays: 1,
+    dueDays: PAYMENT_VALIDITY_DAYS,
     singleUse: true,
     modifyAmount: false,
   };

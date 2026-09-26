@@ -1,6 +1,6 @@
 # Reservas de enlaces de pago
 
-Los nuevos enlaces vencen cinco horas después de crearse. Crear un QR no renueva ese plazo. La creación del enlace y el descuento del stock disponible se confirman en una transacción de Appwrite; si falla un producto, no se reserva ninguno.
+Los nuevos enlaces vencen 14 días después de crearse. Los nuevos QR enviados a Baneco tienen fecha de vencimiento 14 días después de generarse y sus comprobantes firmados mantienen esa misma vigencia. Crear un QR no renueva el plazo del enlace. La creación del enlace y el descuento del stock disponible se confirman en una transacción de Appwrite; si falla un producto, no se reserva ninguno. La nueva vigencia no modifica los vencimientos guardados de enlaces ni QR emitidos anteriormente.
 
 El campo JSON `items` admite el formato anterior (array) y el nuevo sobre `{ inventoryStatus, items }`. Los estados de inventario son `reserved`, `consumed` y `released`. Los enlaces anteriores sin reserva no devuelven unidades que nunca descontaron y mantienen su vencimiento original.
 
@@ -10,7 +10,7 @@ El pago registra la venta y sus detalles, y consume la reserva, en una misma tra
 
 La Function privada `pos-payment-links-expire` se ejecuta cada minuto. Consulta los QRs pendientes, registra los pagos confirmados y cancela los impagos vencidos antes de devolver stock. También se concilia al abrir/consultar/cancelar un enlace.
 
-El proveedor actual recibe una fecha de vencimiento por día; el límite horario se aplica en el POS y mediante cancelación programada. El enlace deja de mostrar el QR a las cinco horas. La cancelación bancaria y devolución suceden en la siguiente revisión, normalmente dentro del siguiente minuto. Ante un error o respuesta ambigua del banco, se conserva la reserva y se reintenta: no se libera inventario de un posible pago recibido. Los errores quedan en las ejecuciones de Appwrite.
+El proveedor actual recibe una fecha de vencimiento por día; el límite horario se aplica en el POS y mediante cancelación programada. El enlace deja de mostrar el QR a los 14 días desde la creación del enlace. La cancelación bancaria y devolución suceden en la siguiente revisión, normalmente dentro del siguiente minuto. Ante un error o respuesta ambigua del banco, se conserva la reserva y se reintenta: no se libera inventario de un posible pago recibido. Los errores quedan en las ejecuciones de Appwrite.
 
 La conciliación interna permite revisar comprobantes firmados antiguos después de una interrupción prolongada; no omite la firma, la validación del monto ni la consulta bancaria. Las rutas normales del POS mantienen la caducidad de sus comprobantes.
 

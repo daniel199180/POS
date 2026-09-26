@@ -18,9 +18,13 @@ import {
   decryptCredentialsWithRotation,
   encryptCredentials,
 } from "./payments.js";
+import {
+  PAYMENT_VALIDITY_DAYS,
+  PAYMENT_VALIDITY_MS,
+} from "./payment-validity.js";
 
 const { databaseId, collections } = appwriteConfig;
-const QR_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const QR_TOKEN_TTL_MS = PAYMENT_VALIDITY_MS;
 const CUSTOM_PRODUCT_ID_PREFIX = "custom-";
 
 function text(value, fallback = "") {
@@ -78,7 +82,7 @@ function getBanecoConfig(value) {
     provider: "baneco",
     environment: "production",
     currency: "BOB",
-    dueDays: 1,
+    dueDays: PAYMENT_VALIDITY_DAYS,
     singleUse: true,
     modifyAmount: false,
     descriptionPrefix: text(config.descriptionPrefix, "POS V1").slice(0, 80),

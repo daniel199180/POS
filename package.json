@@ -13,7 +13,7 @@
     "start": "next start",
     "lint": "next lint",
     "test:reports": "node --test tests/admin-reporting.test.js",
-    "test:payment-links": "node --test tests/payment-links-ui.test.js tests/payment-link-inventory.test.js",
+    "test:payment-links": "node --test tests/payment-links-ui.test.js tests/payment-link-inventory.test.js tests/payment-links-list.test.js tests/baneco-http.test.js tests/payment-link-view.test.js",
     "test:pos-tabs": "node --test tests/pos-tab-settings.test.js",
     "security:harden": "node scripts/harden-appwrite-permissions.js --apply",
     "test:security": "node --test tests/security-hardening.test.js"

@@ -4,6 +4,7 @@ import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { assertCanManagePayments, canAccessBranch } from "./auth-core.js";
 import { getBanecoPublicConfig, testBanecoCredentials } from "./baneco.js";
+import { PAYMENT_VALIDITY_DAYS } from "./payment-validity.js";
 
 const { databaseId, collections } = appwriteConfig;
 const paymentTypes = new Set(["cash", "qr", "card"]);
@@ -217,7 +218,7 @@ function getDefaultConfig(type) {
       provider: "manual",
       environment: "production",
       currency: "BOB",
-      dueDays: 1,
+      dueDays: PAYMENT_VALIDITY_DAYS,
       singleUse: true,
       modifyAmount: false,
       descriptionPrefix: "POS V1",
@@ -246,7 +247,7 @@ function sanitizeConfig(type, inputConfig) {
     provider,
     environment: "production",
     currency: "BOB",
-    dueDays: 1,
+    dueDays: PAYMENT_VALIDITY_DAYS,
     singleUse: bool(config.singleUse, true),
     modifyAmount: false,
     descriptionPrefix: text(config.descriptionPrefix, "POS V1").slice(0, 80),

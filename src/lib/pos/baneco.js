@@ -1,5 +1,6 @@
 import http from "node:http";
 import https from "node:https";
+import { PAYMENT_VALIDITY_DAYS } from "./payment-validity.js";
 
 const defaultCertificationBaseUrl =
   process.env.BANECO_QR_CERTIFICATION_BASE_URL ||
@@ -46,6 +47,10 @@ async function withRetry(operation, attempts = 2) {
       return await operation();
     } catch (error) {
       lastError = error;
+
+      if (error.status >= 400 && error.status < 500 && error.status !== 429) {
+        break;
+      }
 
       if (attempt === attempts - 1) {
         break;
@@ -171,6 +176,7 @@ function getResponseMessage(payload, fallback) {
   return (
     readValue(payload, [
       "message",
+      "Message",
       "error",
       "errorMessage",
       "description",
@@ -310,6 +316,10 @@ function requestBanecoHttp(path, options = {}) {
                   ),
                 );
                 error.status = response.statusCode;
+                // Only keep routing metadata: URLs may contain API secrets.
+                error.method = options.method || "GET";
+                error.path = path;
+                error.allowedMethods = response.headers.allow || "";
                 reject(error);
                 return;
               }
@@ -512,9 +522,9 @@ export async function warmBanecoCredentials(credentials, config = {}) {
   return preparedCredentials;
 }
 
-function getDueDate(days = 1) {
+function getDueDate(days = PAYMENT_VALIDITY_DAYS) {
   const date = new Date();
-  date.setDate(date.getDate() + Math.max(1, Math.min(30, Number(days) || 1)));
+  date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
 
@@ -564,7 +574,7 @@ export async function generateBanecoQr({
       currency: "BOB",
       amount: Math.round((Number(amount) || 0) * 100) / 100,
       description: String(description || "POS V1").slice(0, 120),
-      dueDate: getDueDate(1),
+      dueDate: getDueDate(),
       singleUse: true,
       modifyAmount: false,
     },
@@ -589,14 +599,12 @@ export async function generateBanecoQr({
 
 export async function cancelBanecoQr({ config = {}, credentials, qrId }) {
   const token = await authenticateBaneco(credentials, config);
-  const response = await requestBanecoGetWithBody(
-    banecoQrDefaults.cancelQrPath,
-    {
-      config,
-      token,
-      body: { qrId },
-    },
-  );
+  const response = await requestBaneco(banecoQrDefaults.cancelQrPath, {
+    config,
+    method: "DELETE",
+    token,
+    body: { qrId },
+  });
 
   assertBanecoSuccess(
     response.payload,

@@ -17,13 +17,14 @@ import { decryptCredentials, encryptCredentials } from "./payments.js";
 import { createSale } from "./sales.js";
 import { withTransaction } from "../appwrite/transaction.js";
 import { getLogoImage } from "./settings.js";
+import { PAYMENT_VALIDITY_MS } from "./payment-validity.js";
 import {
   assertPosSaleTabsEnabled,
   assertPosTabEnabled,
 } from "./pos-ui-settings.js";
 
 const { databaseId, collections } = appwriteConfig;
-export const LINK_TTL_MS = 5 * 60 * 60 * 1000;
+export const LINK_TTL_MS = PAYMENT_VALIDITY_MS;
 const TERMINAL_STATUSES = new Set(["paid", "expired", "cancelled"]);
 const CUSTOM_PRODUCT_ID_PREFIX = "custom-";
 
@@ -458,7 +459,7 @@ export async function listPaymentLinks(context, input = {}) {
   }
 
   const { databases } = createAdminClient(context.userAgent);
-  const queries = [Query.limit(100)];
+  const queries = [Query.limit(100), Query.orderDesc("$createdAt")];
 
   if (!context.isAdmin) {
     queries.unshift(Query.equal("createdByUserId", context.user.id));
@@ -466,14 +467,39 @@ export async function listPaymentLinks(context, input = {}) {
 
   if (branchId) queries.unshift(Query.equal("branchId", branchId));
 
-  const result = await databases.listDocuments({
-    databaseId,
-    collectionId: collections.paymentLinks,
-    queries,
-  });
-  const documents = await Promise.all(
-    result.documents.map((link) => expireIfNeeded(databases, link)),
+  const storedDocuments = [];
+  let cursor;
+  do {
+    const result = await databases.listDocuments({
+      databaseId,
+      collectionId: collections.paymentLinks,
+      queries: [...queries, ...(cursor ? [Query.cursorAfter(cursor)] : [])],
+    });
+    storedDocuments.push(...result.documents);
+    cursor =
+      result.documents.length === 100 ? result.documents.at(-1).$id : null;
+  } while (cursor);
+  const results = await Promise.allSettled(
+    storedDocuments.map((link) => expireIfNeeded(databases, link)),
   );
+  const documents = results.map((outcome, index) => {
+    if (outcome.status === "fulfilled") return outcome.value;
+    const link = storedDocuments[index];
+    const error = outcome.reason;
+    console.error("No se pudo conciliar el enlace de pago", {
+      linkId: link.$id,
+      status: error?.status,
+      method: error?.method,
+      path: error?.path,
+      allowedMethods: error?.allowedMethods,
+    });
+    // Reconciliation rolled back; keep the stored status and inventory reserve.
+    return {
+      ...link,
+      lastError:
+        "No se pudo confirmar el estado del pago. La conciliacion sigue pendiente.",
+    };
+  });
 
   return documents
     .sort(

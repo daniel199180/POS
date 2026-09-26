@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  paymentLinkDisplayStatus,
+  paymentLinkSummary,
+} from "@/lib/pos/payment-link-view";
+import PaymentLinksHistory from "./payment-links-history";
 import {
   CalendarClock,
   Check,
   Clipboard,
   ExternalLink,
+  History,
   Loader2,
   RefreshCw,
   Trash2,
@@ -45,9 +51,13 @@ export default function PaymentLinksClient({
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState("");
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const requestSequence = useRef(0);
+  const summary = paymentLinkSummary(links);
 
   const loadLinks = useCallback(async () => {
     if (!branchId) return;
+    const sequence = ++requestSequence.current;
     setIsLoading(true);
     setError("");
     try {
@@ -56,6 +66,7 @@ export default function PaymentLinksClient({
         { cache: "no-store", credentials: "same-origin" },
       );
       const payload = await response.json().catch(() => ({}));
+      if (sequence !== requestSequence.current) return;
       if (!response.ok) {
         throw new Error(
           payload.message || "No se pudieron cargar los enlaces.",
@@ -63,15 +74,29 @@ export default function PaymentLinksClient({
       }
       setLinks(payload.links || []);
     } catch (requestError) {
-      setError(requestError.message);
+      if (sequence === requestSequence.current) setError(requestError.message);
     } finally {
-      setIsLoading(false);
+      if (sequence === requestSequence.current) setIsLoading(false);
     }
+  }, [branchId]);
+
+  useEffect(() => {
+    setLinks([]);
+    setIsHistoryOpen(false);
+    return () => {
+      requestSequence.current++;
+    };
   }, [branchId]);
 
   useEffect(() => {
     loadLinks();
   }, [loadLinks, refreshKey]);
+
+  useEffect(() => {
+    if (!isHistoryOpen) return;
+    const interval = window.setInterval(loadLinks, 30_000);
+    return () => window.clearInterval(interval);
+  }, [isHistoryOpen, loadLinks]);
 
   async function copyLink(link) {
     const url = fullUrl(link.sharePath);
@@ -115,34 +140,47 @@ export default function PaymentLinksClient({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-amber-900 bg-amber-950/25 p-4">
         <p className="text-sm font-semibold text-amber-100">Enlaces de pago</p>
-        <p className="mt-1 text-xs text-neutral-500">
-          {branchName} · consulta los enlaces creados y su estado.
-        </p>
-        <p className="mt-2 text-xs text-neutral-400">
-          Para crear uno, usa Generar enlace de pago debajo de Efectivo y QR en
-          el carrito.
-        </p>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold">Enlaces recientes</p>
-            <p className="mt-1 text-xs text-neutral-500">
-              Enlaces disponibles en esta sucursal
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex gap-5" aria-live="polite">
+            <p className="text-xs text-neutral-400">
+              Listos para pagar{" "}
+              <strong className="ml-2 text-lg text-amber-300">
+                {summary.ready}
+              </strong>
+            </p>
+            <p className="text-xs text-neutral-400">
+              Vencidos{" "}
+              <strong className="ml-2 text-lg text-neutral-200">
+                {summary.expired}
+              </strong>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={loadLinks}
-            disabled={isLoading}
-            className="grid size-9 place-items-center rounded-md border border-neutral-800 text-neutral-400 hover:text-white disabled:opacity-50"
-            aria-label="Actualizar enlaces"
-          >
-            <RefreshCw
-              className={`size-4 ${isLoading ? "animate-spin" : ""}`}
-            />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsHistoryOpen(true);
+                loadLinks();
+              }}
+              className="flex items-center gap-2 rounded-md border border-neutral-700 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800"
+            >
+              <History className="size-4" /> Historial de enlaces
+            </button>
+            <button
+              type="button"
+              onClick={loadLinks}
+              disabled={isLoading}
+              className="grid size-9 place-items-center rounded-md border border-neutral-800 text-neutral-400 hover:text-white disabled:opacity-50"
+              aria-label="Actualizar enlaces"
+            >
+              <RefreshCw
+                className={`size-4 ${isLoading ? "animate-spin" : ""}`}
+              />
+            </button>
+          </div>
         </div>
 
         {error ? (
@@ -152,12 +190,13 @@ export default function PaymentLinksClient({
         ) : null}
 
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
-          {!isLoading && links.length === 0 ? (
+          {!isLoading && !error && links.length === 0 ? (
             <p className="py-10 text-center text-sm text-neutral-500">
               Todavia no hay enlaces.
             </p>
           ) : null}
           {links.map((link) => {
+            const displayStatus = paymentLinkDisplayStatus(link);
             const canCancel = !["paid", "cancelled", "expired"].includes(
               link.status,
             );
@@ -173,7 +212,7 @@ export default function PaymentLinksClient({
                       <span
                         className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${link.status === "paid" ? "border-emerald-800 bg-emerald-950 text-emerald-300" : "border-amber-800 bg-amber-950 text-amber-200"}`}
                       >
-                        {statusLabel[link.status] || link.status}
+                        {statusLabel[displayStatus] || displayStatus}
                       </span>
                     </div>
                     <p className="mt-1 truncate text-xs text-neutral-400">
@@ -232,7 +271,7 @@ export default function PaymentLinksClient({
                     ) : null}
                   </div>
                 </div>
-                {link.status === "payment_received" && link.lastError ? (
+                {link.lastError ? (
                   <p className="mt-2 text-xs text-amber-300">
                     Requiere revision: {link.lastError}
                   </p>
@@ -242,6 +281,16 @@ export default function PaymentLinksClient({
           })}
         </div>
       </div>
+      {isHistoryOpen ? (
+        <PaymentLinksHistory
+          links={links}
+          branchName={branchName}
+          isLoading={isLoading}
+          error={error}
+          onRefresh={loadLinks}
+          onClose={() => setIsHistoryOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -81,7 +81,13 @@ test("payment links tab opens before a first link exists", () => {
   );
   assert.match(html, /Enlaces de pago/);
   assert.match(html, /Todavia no hay enlaces/);
-  assert.match(html, /debajo de Efectivo y QR/);
+  assert.match(html, /Listos para pagar/);
+  assert.match(html, /Vencidos/);
+  assert.match(html, /Historial de enlaces/);
+  assert.doesNotMatch(
+    html,
+    /debajo de Efectivo y QR|Enlaces recientes|consulta los enlaces/,
+  );
   assert.doesNotMatch(html, /Enlace listo para compartir/);
   assert.ok(
     buttons(html).every((button) => button.label !== "Generar enlace de pago"),
