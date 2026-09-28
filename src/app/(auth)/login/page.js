@@ -94,7 +94,7 @@ export default function LoginPage() {
                     onChange={(event) => setPassword(event.target.value)}
                     autoComplete="current-password"
                     required
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2.5 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-500 focus:border-neutral-300 focus:ring-2 focus:ring-white/10"
+                    className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2.5 pr-24 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-500 focus:border-neutral-300 focus:ring-2 focus:ring-white/10"
                     placeholder="********"
                   />
                   <button
@@ -103,13 +103,15 @@ export default function LoginPage() {
                     aria-label={
                       showPassword ? "Ocultar contrasena" : "Mostrar contrasena"
                     }
-                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-neutral-400 transition hover:text-neutral-100"
+                    aria-pressed={showPassword}
+                    className="absolute inset-y-0 right-1 flex min-w-20 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-neutral-300 transition hover:bg-neutral-800 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300"
                   >
                     {showPassword ? (
                       <EyeOff aria-hidden="true" size={18} strokeWidth={1.8} />
                     ) : (
                       <Eye aria-hidden="true" size={18} strokeWidth={1.8} />
                     )}
+                    {showPassword ? "Ocultar" : "Ver"}
                   </button>
                 </div>
               </label>
