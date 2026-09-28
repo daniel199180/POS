@@ -8,9 +8,12 @@ export async function GET(request) {
     const url = new URL(request.url);
     const links = await listPaymentLinks(context, {
       branchId: url.searchParams.get("branchId"),
+      cursor: url.searchParams.get("cursor"),
+      limit: url.searchParams.get("limit"),
+      filter: url.searchParams.get("filter"),
     });
 
-    return NextResponse.json({ links });
+    return NextResponse.json(links);
   } catch (error) {
     return getApiErrorResponse(error);
   }

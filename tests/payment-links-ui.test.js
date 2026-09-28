@@ -79,11 +79,11 @@ test("payment links tab opens before a first link exists", () => {
       branchName: "Sucursal de prueba",
     }),
   );
-  assert.match(html, /Enlaces de pago/);
   assert.match(html, /Todavia no hay enlaces/);
   assert.match(html, /Listos para pagar/);
   assert.match(html, /Vencidos/);
-  assert.match(html, /Historial de enlaces/);
+  assert.doesNotMatch(html, /Historial de enlaces/);
+  assert.doesNotMatch(html, />Enlaces de pago<\/p>/);
   assert.doesNotMatch(
     html,
     /debajo de Efectivo y QR|Enlaces recientes|consulta los enlaces/,

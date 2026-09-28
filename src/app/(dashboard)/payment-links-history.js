@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,10 +8,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import {
-  paymentLinkDisplayStatus,
-  paymentLinkHistoryPage,
-} from "@/lib/pos/payment-link-view";
+import { paymentLinkDisplayStatus } from "@/lib/pos/payment-link-view";
 
 const labels = {
   open: "Listo para pagar",
@@ -36,17 +33,17 @@ function money(value) {
 export default function PaymentLinksHistory({
   links,
   branchName,
+  total = 0,
+  page = 1,
+  hasNext = false,
   isLoading,
   error,
   onRefresh,
+  onNext,
+  onPrevious,
   onClose,
 }) {
   const dialog = useRef(null);
-  const [requestedPage, setPage] = useState(1);
-  const { page, pageCount, start, rows } = paymentLinkHistoryPage(
-    links,
-    requestedPage,
-  );
   useEffect(() => {
     const element = dialog.current;
     element.showModal();
@@ -56,10 +53,6 @@ export default function PaymentLinksHistory({
       document.body.style.overflow = previousOverflow;
     };
   }, []);
-  useEffect(() => {
-    setPage(page);
-  }, [page]);
-
   return (
     <dialog
       ref={dialog}
@@ -127,14 +120,13 @@ export default function PaymentLinksHistory({
             <thead className="sticky top-0 bg-neutral-900 text-xs text-neutral-400">
               <tr>
                 {[
+                  "Acciones",
                   "Creación",
                   "Monto",
                   "Estado",
-                  "Cajera/o",
                   "Detalle",
                   "Vencimiento",
                   "Venta",
-                  "Enlace",
                 ].map((heading) => (
                   <th
                     key={heading}
@@ -147,13 +139,24 @@ export default function PaymentLinksHistory({
               </tr>
             </thead>
             <tbody>
-              {rows.map((link) => {
+              {links.map((link) => {
                 const status = paymentLinkDisplayStatus(link);
                 return (
                   <tr
                     key={link.id}
                     className="border-t border-neutral-800 align-top hover:bg-neutral-900/60"
                   >
+                    <td className="px-4 py-3">
+                      <a
+                        href={link.sharePath}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label="Abrir enlace de pago"
+                        className="grid size-8 place-items-center rounded hover:bg-neutral-800"
+                      >
+                        <ExternalLink className="size-4" />
+                      </a>
+                    </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap text-neutral-400">
                       {date(link.createdAt)}
                     </td>
@@ -162,7 +165,7 @@ export default function PaymentLinksHistory({
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`text-xs whitespace-nowrap ${status === "paid" ? "text-emerald-300" : status === "expired" ? "text-neutral-400" : "text-amber-300"}`}
+                        className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${status === "paid" ? "border-emerald-800 bg-emerald-950 text-emerald-300" : status === "expired" ? "border-red-800 bg-red-950 text-red-300" : status === "cancelled" ? "border-neutral-700 bg-neutral-900 text-neutral-400" : "border-amber-800 bg-amber-950 text-amber-300"}`}
                       >
                         {labels[status] || status}
                       </span>
@@ -171,9 +174,6 @@ export default function PaymentLinksHistory({
                           {link.lastError}
                         </p>
                       ) : null}
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      {link.createdByName || "—"}
                     </td>
                     <td className="min-w-44 px-4 py-3 text-xs text-neutral-300">
                       <p>
@@ -191,24 +191,13 @@ export default function PaymentLinksHistory({
                     <td className="px-4 py-3 text-xs text-neutral-400">
                       {link.saleNumber || "—"}
                     </td>
-                    <td className="px-4 py-3">
-                      <a
-                        href={link.sharePath}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label="Abrir enlace de pago"
-                        className="grid size-8 place-items-center rounded hover:bg-neutral-800"
-                      >
-                        <ExternalLink className="size-4" />
-                      </a>
-                    </td>
                   </tr>
                 );
               })}
-              {!rows.length ? (
+              {!links.length ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
                     {isLoading
@@ -225,7 +214,7 @@ export default function PaymentLinksHistory({
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-neutral-800 px-5 py-3 text-xs text-neutral-400">
           <p aria-live="polite">
             {links.length
-              ? `${start + 1}–${start + rows.length} de ${links.length}`
+              ? `${(page - 1) * 50 + 1}–${(page - 1) * 50 + links.length} de ${total}`
               : "0 enlaces"}
             <span className="ml-3 text-neutral-500">
               Se actualiza cada 30 segundos
@@ -235,20 +224,21 @@ export default function PaymentLinksHistory({
             <button
               type="button"
               aria-label="Página anterior"
-              disabled={page === 1}
-              onClick={() => setPage(page - 1)}
+              disabled={page === 1 || isLoading}
+              onClick={onPrevious}
               className="grid size-8 place-items-center rounded border border-neutral-700 hover:bg-neutral-800 disabled:opacity-30"
             >
               <ChevronLeft className="size-4" />
             </button>
             <span>
-              Página {page} de {pageCount}
+              Página {page}
+              {hasNext ? " en adelante" : " · última"}
             </span>
             <button
               type="button"
               aria-label="Página siguiente"
-              disabled={page === pageCount}
-              onClick={() => setPage(page + 1)}
+              disabled={!hasNext || isLoading}
+              onClick={onNext}
               className="grid size-8 place-items-center rounded border border-neutral-700 hover:bg-neutral-800 disabled:opacity-30"
             >
               <ChevronRight className="size-4" />

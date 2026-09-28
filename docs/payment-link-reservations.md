@@ -8,7 +8,7 @@ El pago registra la venta y sus detalles, y consume la reserva, en una misma tra
 
 ## Revisión automática
 
-La Function privada `pos-payment-links-expire` se ejecuta cada minuto. Consulta los QRs pendientes, registra los pagos confirmados y cancela los impagos vencidos antes de devolver stock. También se concilia al abrir/consultar/cancelar un enlace.
+La Function privada `pos-payment-links-expire` se ejecuta cada minuto. Consulta los QRs pendientes, registra los pagos confirmados y cancela los impagos vencidos antes de devolver stock. El historial del POS consulta los enlaces por páginas con cursor, por lo que mantiene visibles los pagados, cancelados, vencidos y pendientes sin descargar toda la colección ni conciliar cada registro al leerla. La conciliación puntual se mantiene al abrir o cancelar un enlace.
 
 El proveedor actual recibe una fecha de vencimiento por día; el límite horario se aplica en el POS y mediante cancelación programada. El enlace deja de mostrar el QR a los 14 días desde la creación del enlace. La cancelación bancaria y devolución suceden en la siguiente revisión, normalmente dentro del siguiente minuto. Ante un error o respuesta ambigua del banco, se conserva la reserva y se reintenta: no se libera inventario de un posible pago recibido. Los errores quedan en las ejecuciones de Appwrite.
 

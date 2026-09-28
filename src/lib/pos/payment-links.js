@@ -451,62 +451,111 @@ export async function createPaymentLink(context, input = {}) {
   };
 }
 
+function paymentLinkScopeQueries(context, branchId) {
+  const queries = [];
+
+  if (!context.isAdmin) {
+    queries.push(Query.equal("createdByUserId", context.user.id));
+  }
+
+  if (branchId) queries.push(Query.equal("branchId", branchId));
+
+  return queries;
+}
+
+async function countPaymentLinks(databases, scopeQueries, filters) {
+  const result = await databases.listDocuments({
+    databaseId,
+    collectionId: collections.paymentLinks,
+    queries: [
+      ...scopeQueries,
+      ...filters,
+      Query.limit(1),
+      Query.select(["$id"]),
+    ],
+  });
+  return result.total;
+}
+
 export async function listPaymentLinks(context, input = {}) {
   const branchId = text(input.branchId);
+  const filter = text(input.filter) || "all";
 
   if (branchId && !canAccessBranch(context, branchId)) {
     throw new ForbiddenError("No tienes acceso a esta sucursal.");
   }
 
   const { databases } = createAdminClient(context.userAgent);
-  const queries = [Query.limit(100), Query.orderDesc("$createdAt")];
-
-  if (!context.isAdmin) {
-    queries.unshift(Query.equal("createdByUserId", context.user.id));
-  }
-
-  if (branchId) queries.unshift(Query.equal("branchId", branchId));
-
-  const storedDocuments = [];
-  let cursor;
-  do {
-    const result = await databases.listDocuments({
-      databaseId,
-      collectionId: collections.paymentLinks,
-      queries: [...queries, ...(cursor ? [Query.cursorAfter(cursor)] : [])],
-    });
-    storedDocuments.push(...result.documents);
-    cursor =
-      result.documents.length === 100 ? result.documents.at(-1).$id : null;
-  } while (cursor);
-  const results = await Promise.allSettled(
-    storedDocuments.map((link) => expireIfNeeded(databases, link)),
-  );
-  const documents = results.map((outcome, index) => {
-    if (outcome.status === "fulfilled") return outcome.value;
-    const link = storedDocuments[index];
-    const error = outcome.reason;
-    console.error("No se pudo conciliar el enlace de pago", {
-      linkId: link.$id,
-      status: error?.status,
-      method: error?.method,
-      path: error?.path,
-      allowedMethods: error?.allowedMethods,
-    });
-    // Reconciliation rolled back; keep the stored status and inventory reserve.
-    return {
-      ...link,
-      lastError:
-        "No se pudo confirmar el estado del pago. La conciliacion sigue pendiente.",
-    };
+  const pageSize = Math.min(Math.max(Number(input.limit) || 25, 1), 50);
+  const cursor = text(input.cursor);
+  const scopeQueries = paymentLinkScopeQueries(context, branchId);
+  const now = new Date().toISOString();
+  const filterQueries =
+    filter === "ready"
+      ? [
+          Query.equal("status", ["open", "qr_pending", "failed"]),
+          Query.greaterThan("expiresAt", now),
+        ]
+      : filter === "expired"
+        ? [
+            Query.or([
+              Query.equal("status", "expired"),
+              Query.and([
+                Query.equal("status", ["open", "qr_pending", "failed"]),
+                Query.lessThanEqual("expiresAt", now),
+              ]),
+            ]),
+          ]
+        : filter === "cancelled"
+          ? [Query.equal("status", "cancelled")]
+          : [];
+  const pageResult = await databases.listDocuments({
+    databaseId,
+    collectionId: collections.paymentLinks,
+    queries: [
+      ...scopeQueries,
+      ...filterQueries,
+      Query.orderDesc("$createdAt"),
+      Query.limit(pageSize + 1),
+      ...(cursor ? [Query.cursorAfter(cursor)] : []),
+    ],
   });
+  const pageDocuments = pageResult.documents.slice(0, pageSize);
+  const documents = pageDocuments.map((link) =>
+    toPaymentLink(link, { includeToken: true }),
+  );
+  const nextCursor =
+    pageResult.documents.length > pageSize
+      ? pageDocuments.at(-1).$id
+      : "";
+  const [ready, expired, cancelled, pendingConfirmation] = await Promise.all([
+    countPaymentLinks(databases, scopeQueries, [
+      Query.equal("status", ["open", "qr_pending", "failed"]),
+      Query.greaterThan("expiresAt", now),
+    ]),
+    countPaymentLinks(databases, scopeQueries, [
+      Query.or([
+        Query.equal("status", "expired"),
+        Query.and([
+          Query.equal("status", ["open", "qr_pending", "failed"]),
+          Query.lessThanEqual("expiresAt", now),
+        ]),
+      ]),
+    ]),
+    countPaymentLinks(databases, scopeQueries, [
+      Query.equal("status", "cancelled"),
+    ]),
+    countPaymentLinks(databases, scopeQueries, [
+      Query.equal("status", ["processing", "payment_received"]),
+    ]),
+  ]);
 
-  return documents
-    .sort(
-      (left, right) =>
-        Date.parse(right.$createdAt) - Date.parse(left.$createdAt),
-    )
-    .map((link) => toPaymentLink(link, { includeToken: true }));
+  return {
+    links: documents,
+    total: pageResult.total,
+    nextCursor,
+    summary: { ready, expired, cancelled, pendingConfirmation },
+  };
 }
 
 export async function cancelPaymentLink(context, linkId) {

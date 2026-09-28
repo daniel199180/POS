@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   LogOut,
   History,
+  Link2,
   ChartNoAxesCombined,
   Menu,
   Package,
@@ -23,6 +24,11 @@ const navigation = [
     href: "/",
     label: "Punto de venta",
     icon: ShoppingCart,
+  },
+  {
+    href: "/enlaces-pago",
+    label: "Enlaces de pago",
+    icon: Link2,
   },
   {
     href: "/productos",
