@@ -9,6 +9,7 @@ import {
   getBanecoQrStatus,
 } from "../src/lib/pos/baneco.js";
 import { getPosBanecoQrPaymentTokenPayload } from "../src/lib/pos/baneco-qr.js";
+import { STATIC_QR_VALIDITY_DAYS } from "../src/lib/pos/payment-validity.js";
 
 async function bank(t, respond) {
   const calls = [];
@@ -82,6 +83,33 @@ test("new bank QRs expire fourteen days after generation across a month boundary
   });
   assert.equal(fixture.calls.at(-1).body.dueDate, "2026-10-10");
   assert.equal(fixture.calls.at(-1).body.singleUse, true);
+});
+
+test("static bank QRs last one year, omit amount and allow repeated payments", async (t) => {
+  t.mock.timers.enable({
+    apis: ["Date"],
+    now: Date.parse("2026-10-01T17:00:00Z"),
+  });
+  const fixture = await bank(t, (_call, res) => {
+    res.end(
+      JSON.stringify({ responseCode: 0, qrId: "static-qr", qrImage: "image" }),
+    );
+  });
+  await generateBanecoQr({
+    ...fixture,
+    amount: 0,
+    description: "Caja principal",
+    transactionId: "static-transaction",
+    singleUse: false,
+    modifyAmount: true,
+    dueDays: STATIC_QR_VALIDITY_DAYS,
+  });
+  const body = fixture.calls.at(-1).body;
+  assert.equal(body.amount, 0);
+  assert.equal(body.singleUse, false);
+  assert.equal(body.modifyAmount, true);
+  assert.equal(body.description, "Caja principal");
+  assert.equal(body.dueDate, "2027-10-01");
 });
 
 test("signed QR receipts remain usable for fourteen days and then expire", (t) => {

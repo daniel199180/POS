@@ -8,6 +8,7 @@ import {
   Loader2,
   Package,
   Plus,
+  QrCode,
 } from "lucide-react";
 
 const tabOptions = [
@@ -31,6 +32,13 @@ const tabOptions = [
     description: "Cobros libres sin un producto del catálogo.",
     Icon: Plus,
     tone: "text-neutral-200 bg-neutral-950 border-neutral-700",
+  },
+  {
+    id: "staticQr",
+    label: "QR estático",
+    description: "QR reutilizable sin monto fijo y consulta de pagos.",
+    Icon: QrCode,
+    tone: "text-violet-300 bg-violet-950 border-violet-900",
   },
   {
     id: "links",

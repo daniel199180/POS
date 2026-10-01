@@ -33,6 +33,9 @@ export const appwriteConfig = {
     sales: process.env.NEXT_PUBLIC_COL_SALES || "sales",
     saleItems: process.env.NEXT_PUBLIC_COL_SALE_ITEMS || "sale_items",
     paymentLinks: process.env.COL_PAYMENT_LINKS || "payment_links",
+    staticQrs: process.env.COL_STATIC_QRS || "static_qrs",
+    staticQrPayments:
+      process.env.COL_STATIC_QR_PAYMENTS || "static_qr_payments",
     auditEvents: process.env.COL_AUDIT_EVENTS || "audit_events",
     posUiSettings: process.env.COL_POS_UI_SETTINGS || "pos_ui_settings",
   },

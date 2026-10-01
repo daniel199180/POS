@@ -242,7 +242,7 @@ export default function SalesClient({
         </div>
       </div>
 
-      <div className="grid gap-3 rounded-md border border-neutral-800 bg-neutral-900 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1.4fr]">
+      <div className="grid gap-3 rounded-md border border-neutral-800 bg-neutral-900 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1.4fr]">
         <label className="text-xs font-medium text-neutral-400">
           Desde
           <input
@@ -292,6 +292,24 @@ export default function SalesClient({
             <option value="cash">Efectivo</option>
             <option value="qr">QR</option>
             <option value="card">Tarjeta</option>
+          </select>
+        </label>
+
+        <label className="text-xs font-medium text-neutral-400">
+          Método de pago
+          <select
+            value={filters.paymentMethodId}
+            onChange={(event) =>
+              updateFilter("paymentMethodId", event.target.value)
+            }
+            className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
+          >
+            <option value="">Todos los métodos</option>
+            {options.paymentMethods.map((method) => (
+              <option key={method.id} value={method.id}>
+                {method.label}
+              </option>
+            ))}
           </select>
         </label>
 
@@ -346,7 +364,7 @@ export default function SalesClient({
               </div>
               <div>
                 <p className="text-xs font-medium text-neutral-500 uppercase">
-                  {paymentLabels[type]}
+                  {paymentLabels[type] || type}
                 </p>
                 <p className="mt-1 text-lg font-semibold">{money(value)}</p>
               </div>
@@ -354,6 +372,34 @@ export default function SalesClient({
           );
         })}
       </div>
+
+      {summary.paymentMethodTotals?.length ? (
+        <div>
+          <p className="mb-2 text-xs font-medium text-neutral-500 uppercase">
+            Métodos de pago registrados
+          </p>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {summary.paymentMethodTotals.map((method) => (
+              <div
+                key={method.id}
+                className="flex items-center justify-between gap-3 rounded-md border border-violet-900 bg-violet-950/20 p-4"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-violet-100">
+                    {method.label}
+                  </p>
+                  <p className="mt-1 text-xs text-violet-300/70">
+                    {method.count} registro{method.count === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold text-violet-100">
+                  {money(method.total)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-md border border-neutral-800 bg-neutral-900 p-4">

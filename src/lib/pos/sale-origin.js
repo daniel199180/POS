@@ -30,11 +30,29 @@ export function saleChannel(sale = {}) {
   return sale.paymentLinkId ? "paymentLink" : "pos";
 }
 
+function isStaticQrSale(sale = {}, items = []) {
+  return (
+    String(sale.notes || "")
+      .trim()
+      .toLowerCase()
+      .startsWith("qr estático:") ||
+    items.some((item) =>
+      String(item.productName || "")
+        .trim()
+        .toLowerCase()
+        .startsWith("qr estático:"),
+    )
+  );
+}
+
 export function getSaleOrigin(sale = {}, items = sale.items || []) {
   const category = saleCategory(items);
   const channel = saleChannel(sale);
-  const channelLabel =
-    channel === "paymentLink" ? "Enlace de pago" : "POS directo";
+  const channelLabel = isStaticQrSale(sale, items)
+    ? "QR estático"
+    : channel === "paymentLink"
+      ? "Enlace de pago"
+      : "POS directo";
   const categoryLabel = saleCategoryLabels[category];
   return {
     category,

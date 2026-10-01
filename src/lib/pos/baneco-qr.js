@@ -21,6 +21,7 @@ import {
 import {
   PAYMENT_VALIDITY_DAYS,
   PAYMENT_VALIDITY_MS,
+  STATIC_QR_VALIDITY_DAYS,
 } from "./payment-validity.js";
 
 const { databaseId, collections } = appwriteConfig;
@@ -574,7 +575,7 @@ export async function generatePosBanecoQr(context, input = {}, options = {}) {
     credentials,
     credentialsNeedRotation,
   } = await getBanecoPaymentContext(context, input);
-  if (!options.reservedCart) {
+  if (!options.reservedCart && !options.staticQr) {
     await assertPosSaleTabsEnabled(context, branch.$id, input.items, databases);
   }
   const [preparedCredentials, cart] = await Promise.all([
@@ -585,23 +586,30 @@ export async function generatePosBanecoQr(context, input = {}, options = {}) {
       credentials,
       credentialsNeedRotation,
     }),
-    options.reservedCart ||
-      calculateCartTotal(databases, branch.$id, input.items),
+    options.staticQr
+      ? Promise.resolve({ total: 0, itemCount: 0 })
+      : options.reservedCart ||
+        calculateCartTotal(databases, branch.$id, input.items),
   ]);
 
-  if (cart.total <= 0) {
+  if (!options.staticQr && cart.total <= 0) {
     throw inputError("El total del QR debe ser mayor a cero.");
   }
 
   const transactionId = buildQrTransactionId(branch.code);
-  const description =
-    `${config.descriptionPrefix} ${branch.code || branch.name}`.slice(0, 120);
+  const description = text(
+    input.description,
+    `${config.descriptionPrefix} ${branch.code || branch.name}`,
+  ).slice(0, 120);
   const qr = await generateBanecoQr({
     amount: cart.total,
     config,
     credentials: preparedCredentials,
     description,
     transactionId,
+    singleUse: options.staticQr ? false : true,
+    modifyAmount: options.staticQr ? true : false,
+    dueDays: options.staticQr ? STATIC_QR_VALIDITY_DAYS : undefined,
   });
 
   return {
@@ -618,6 +626,7 @@ export async function generatePosBanecoQr(context, input = {}, options = {}) {
     generatedAt: new Date().toISOString(),
     paymentToken: signQrPaymentPayload({
       tokenType: "baneco-qr-payment",
+      qrType: options.staticQr ? "static" : "dynamic",
       branchId: branch.$id,
       paymentMethodId: paymentMethod.$id,
       amount: cart.total,

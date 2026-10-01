@@ -50,6 +50,7 @@ function loadComponent(name) {
 
 const PaymentLinksClient = loadComponent("payment-links-client");
 const PaymentLinkCreator = loadComponent("payment-link-creator");
+const StaticPaymentQrClient = loadComponent("static-payment-qr-client");
 const DashboardClient = loadComponent("dashboard-client");
 function buttons(html) {
   return Array.from(
@@ -92,6 +93,40 @@ test("payment links tab opens before a first link exists", () => {
   assert.ok(
     buttons(html).every((button) => button.label !== "Generar enlace de pago"),
   );
+});
+
+test("static QR tab uses the active branch and exposes payment history", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(StaticPaymentQrClient, {
+      branchId: "test-branch",
+      branchName: "Sucursal de prueba",
+      paymentMethods: [
+        {
+          id: "qr",
+          branchId: "test-branch",
+          type: "qr",
+          isEnabled: true,
+          config: { provider: "baneco" },
+        },
+      ],
+    }),
+  );
+  assert.doesNotMatch(html, /Cobro reutilizable|múltiples pagos/);
+  assert.doesNotMatch(html, />QR estático<|>Sucursal<.*<select/s);
+  assert.doesNotMatch(html, /<img|Total recibido/);
+  assert.match(html, /w-full rounded-md border/);
+  assert.match(html, /Crear QR estático/);
+  assert.match(html, /Mis QR estáticos/);
+  const staticQrSource = readFileSync(
+    new URL(
+      "../src/app/(dashboard)/static-payment-qr-client.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(staticQrSource, /Consultar pagos/);
+  assert.match(staticQrSource, /Deshabilitar/);
+  assert.match(staticQrSource, /method: "DELETE"/);
 });
 
 test("empty checkout renders safely and disables link creation", () => {
@@ -228,6 +263,7 @@ test("POS only renders tabs enabled by the administrator", () => {
             products: false,
             monthly: false,
             custom: false,
+            staticQr: false,
             links: false,
             daily: true,
           },

@@ -12,6 +12,7 @@ import {
   Package,
   PanelLeftClose,
   CreditCard,
+  QrCode,
   ReceiptText,
   Settings,
   ShoppingCart,
@@ -29,6 +30,11 @@ const navigation = [
     href: "/enlaces-pago",
     label: "Enlaces de pago",
     icon: Link2,
+  },
+  {
+    href: "/qr-estaticos",
+    label: "QR estáticos",
+    icon: QrCode,
   },
   {
     href: "/productos",

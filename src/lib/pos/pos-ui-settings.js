@@ -6,12 +6,20 @@ import { withAudit } from "./audit-writer.js";
 
 const { databaseId, collections } = appwriteConfig;
 
-export const POS_TAB_KEYS = ["products", "monthly", "custom", "links", "daily"];
+export const POS_TAB_KEYS = [
+  "products",
+  "monthly",
+  "custom",
+  "staticQr",
+  "links",
+  "daily",
+];
 
 export const DEFAULT_POS_TAB_SETTINGS = Object.freeze({
   products: true,
   monthly: true,
   custom: true,
+  staticQr: true,
   links: true,
   daily: true,
 });

@@ -215,6 +215,12 @@ function toCashier(document) {
 }
 
 function toSale(document) {
+  const notes = document.notes || "";
+  const staticQrMatch = notes.match(/^QR estático:\s*(.+?)(?:\s*\|\s*Ref:|$)/i);
+  const paymentMethodLabel = staticQrMatch
+    ? `QR estático · ${staticQrMatch[1]}`.slice(0, 80)
+    : document.paymentMethodLabel;
+
   return {
     id: document.$id,
     saleNumber: document.saleNumber,
@@ -228,12 +234,12 @@ function toSale(document) {
     total: document.total,
     paymentMethodId: document.paymentMethodId,
     paymentMethodType: document.paymentMethodType,
-    paymentMethodLabel: document.paymentMethodLabel,
+    paymentMethodLabel,
     amountPaid: document.amountPaid,
     change: document.change || 0,
     senderName: document.senderName || "",
     paymentLinkId: document.paymentLinkId || "",
-    notes: document.notes || "",
+    notes,
     completedAt: document.completedAt || document.$createdAt,
     createdAt: document.$createdAt,
     updatedAt: document.$updatedAt,
@@ -354,6 +360,7 @@ function buildSalesQueries(context, filters = {}, { paginate = true } = {}) {
   const dateRange = getDateRange(filters.dateFrom, filters.dateTo);
   const branchFilter = allowedBranchFilter(context, filters.branchId);
   const paymentType = text(filters.paymentType);
+  const paymentMethodId = text(filters.paymentMethodId);
   const cashierId = text(filters.cashierId);
   const status = text(filters.status);
 
@@ -373,6 +380,10 @@ function buildSalesQueries(context, filters = {}, { paginate = true } = {}) {
 
   if (paymentTypes.has(paymentType)) {
     queries.push(Query.equal("paymentMethodType", paymentType));
+  }
+
+  if (paymentMethodId) {
+    queries.push(Query.equal("paymentMethodId", paymentMethodId));
   }
 
   if (cashierId) {
@@ -407,12 +418,25 @@ function getSaleSummary(sales) {
     qr: 0,
     card: 0,
   };
+  const paymentMethodTotals = new Map();
   const channelTotals = { pos: 0, paymentLink: 0 };
 
   for (const sale of completed) {
     paymentTotals[sale.paymentMethodType] = roundMoney(
       (paymentTotals[sale.paymentMethodType] || 0) + sale.total,
     );
+    const paymentMethodKey =
+      sale.paymentMethodId || sale.paymentMethodType || "unknown";
+    const currentMethod = paymentMethodTotals.get(paymentMethodKey) || {
+      id: paymentMethodKey,
+      label: sale.paymentMethodLabel || sale.paymentMethodType || "Pago",
+      type: sale.paymentMethodType || "",
+      total: 0,
+      count: 0,
+    };
+    currentMethod.total = roundMoney(currentMethod.total + sale.total);
+    currentMethod.count += 1;
+    paymentMethodTotals.set(paymentMethodKey, currentMethod);
     const channel = sale.paymentLinkId ? "paymentLink" : "pos";
     channelTotals[channel] = roundMoney(channelTotals[channel] + sale.total);
   }
@@ -430,6 +454,7 @@ function getSaleSummary(sales) {
       cancelled.reduce((sum, sale) => sum + (sale.total || 0), 0),
     ),
     paymentTotals,
+    paymentMethodTotals: Array.from(paymentMethodTotals.values()),
     channelTotals,
   };
 }

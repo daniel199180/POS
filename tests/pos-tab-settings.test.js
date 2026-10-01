@@ -21,6 +21,7 @@ test("POS tabs require at least one visible section", () => {
         products: false,
         monthly: false,
         custom: false,
+        staticQr: false,
         links: false,
         daily: false,
       }),

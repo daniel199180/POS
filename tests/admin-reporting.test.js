@@ -146,6 +146,12 @@ test("payment origin distinguishes channel and charge category", () => {
     channelLabel: "Enlace de pago",
     label: "Enlace de pago · Productos",
   });
+  assert.equal(
+    getSaleOrigin({ notes: "QR estático: Caja principal | Ref: bank-1" }, [
+      { productName: "QR estático: Caja principal", productSku: "CUSTOM" },
+    ]).label,
+    "QR estático · Cobro personalizado",
+  );
 });
 
 test("net discounts and rounding allocate every cent exactly once", () => {

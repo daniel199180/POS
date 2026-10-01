@@ -27,6 +27,7 @@ export async function GET(request) {
       dateTo: url.searchParams.get("dateTo"),
       branchId: url.searchParams.get("branchId"),
       paymentType: url.searchParams.get("paymentType"),
+      paymentMethodId: url.searchParams.get("paymentMethodId"),
       cashierId: url.searchParams.get("cashierId"),
       status: url.searchParams.get("status"),
       search: url.searchParams.get("search"),

@@ -24,6 +24,7 @@ import {
 import InstitutePaymentsClient from "./instituto/institute-payments-client";
 import PaymentLinksClient from "./payment-links-client";
 import PaymentLinkCreator from "./payment-link-creator";
+import StaticPaymentQrClient from "./static-payment-qr-client";
 import {
   CUSTOMER_DISPLAY_SESSION_STORAGE_KEY,
   CUSTOMER_DISPLAY_VERSION,
@@ -37,7 +38,14 @@ const PRODUCT_PAGE_SIZE = 20;
 const SALE_SUCCESS_RESET_DELAY_MS = 1800;
 const CUSTOM_CHARGE_SKU = "CUSTOM";
 const INSTITUTE_CHARGE_SKU = "MENSUALIDAD";
-const POS_TAB_ORDER = ["products", "monthly", "custom", "links", "daily"];
+const POS_TAB_ORDER = [
+  "products",
+  "monthly",
+  "custom",
+  "staticQr",
+  "links",
+  "daily",
+];
 const DEFAULT_POS_TABS = Object.fromEntries(
   POS_TAB_ORDER.map((tabId) => [tabId, true]),
 );
@@ -1684,6 +1692,22 @@ export default function DashboardClient({
                   Cobro personalizado
                 </button>
               ) : null}
+              {enabledPosTabs.staticQr ? (
+                <button
+                  aria-selected={activePosTab === "staticQr"}
+                  className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                    activePosTab === "staticQr"
+                      ? "bg-violet-400 text-violet-950"
+                      : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                  }`}
+                  onClick={() => setActivePosTab("staticQr")}
+                  role="tab"
+                  type="button"
+                >
+                  <QrCode className="size-4" />
+                  QR estático
+                </button>
+              ) : null}
               {enabledPosTabs.links ? (
                 <button
                   aria-selected={activePosTab === "links"}
@@ -1889,6 +1913,14 @@ export default function DashboardClient({
                   selectedBranchName={selectedBranch?.name || ""}
                 />
               </div>
+            ) : null}
+            {enabledPosTabs.staticQr && activePosTab === "staticQr" ? (
+              <StaticPaymentQrClient
+                key={selectedBranchId}
+                branchId={selectedBranchId}
+                branchName={selectedBranch?.name || "Sucursal"}
+                paymentMethods={catalog.paymentMethods}
+              />
             ) : null}
             {enabledPosTabs.links && activePosTab === "links" ? (
               <PaymentLinksClient

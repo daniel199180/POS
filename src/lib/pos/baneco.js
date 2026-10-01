@@ -559,6 +559,9 @@ export async function generateBanecoQr({
   credentials,
   description,
   transactionId,
+  singleUse = true,
+  modifyAmount = false,
+  dueDays = PAYMENT_VALIDITY_DAYS,
 }) {
   const [token, encryptedAccount] = await Promise.all([
     authenticateBaneco(credentials, config),
@@ -574,9 +577,9 @@ export async function generateBanecoQr({
       currency: "BOB",
       amount: Math.round((Number(amount) || 0) * 100) / 100,
       description: String(description || "POS V1").slice(0, 120),
-      dueDate: getDueDate(),
-      singleUse: true,
-      modifyAmount: false,
+      dueDate: getDueDate(dueDays),
+      singleUse: Boolean(singleUse),
+      modifyAmount: Boolean(modifyAmount),
     },
   });
   assertBanecoSuccess(response.payload, "Baneco rechazo la generacion del QR.");

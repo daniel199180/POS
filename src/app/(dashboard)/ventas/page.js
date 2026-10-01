@@ -20,6 +20,7 @@ export default async function SalesPage() {
     dateTo: today,
     branchId: "",
     paymentType: "",
+    paymentMethodId: "",
     cashierId: "",
     status: "",
     search: "",
