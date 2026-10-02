@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { getApiErrorResponse, getCurrentUserContext } from "@/lib/pos/auth";
 import {
+  archiveStaticQr,
   cancelStaticQr,
   checkStaticQr,
   getStaticQrDetails,
 } from "@/lib/pos/static-qrs";
 
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   try {
     const context = await getCurrentUserContext({ redirectToLogin: false });
     const { qrId } = await params;
-    return NextResponse.json(await getStaticQrDetails(context, qrId));
+    const url = new URL(request.url);
+    return NextResponse.json(
+      await getStaticQrDetails(context, qrId, {
+        page: url.searchParams.get("page"),
+      }),
+    );
   } catch (error) {
     return getApiErrorResponse(error);
   }
@@ -26,7 +32,9 @@ export async function POST(request, { params }) {
       error.status = 400;
       throw error;
     }
-    return NextResponse.json(await checkStaticQr(context, qrId));
+    return NextResponse.json(
+      await checkStaticQr(context, qrId, { page: input.page }),
+    );
   } catch (error) {
     return getApiErrorResponse(error);
   }
@@ -37,6 +45,25 @@ export async function DELETE(_request, { params }) {
     const context = await getCurrentUserContext({ redirectToLogin: false });
     const { qrId } = await params;
     return NextResponse.json({ qr: await cancelStaticQr(context, qrId) });
+  } catch (error) {
+    return getApiErrorResponse(error);
+  }
+}
+
+export async function PATCH(request, { params }) {
+  try {
+    const context = await getCurrentUserContext({ redirectToLogin: false });
+    const { qrId } = await params;
+    const input = await request.json().catch(() => ({}));
+    if (input.action !== "archive") {
+      const error = new Error("Acción no soportada.");
+      error.status = 400;
+      throw error;
+    }
+
+    return NextResponse.json({
+      qr: await archiveStaticQr(context, qrId),
+    });
   } catch (error) {
     return getApiErrorResponse(error);
   }

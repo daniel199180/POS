@@ -127,6 +127,24 @@ test("static QR tab uses the active branch and exposes payment history", () => {
   assert.match(staticQrSource, /Consultar pagos/);
   assert.match(staticQrSource, /Deshabilitar/);
   assert.match(staticQrSource, /method: "DELETE"/);
+  assert.match(staticQrSource, /paymentsPage/);
+  assert.match(staticQrSource, /Pagos del día/);
+  const staticQrServerSource = readFileSync(
+    new URL("../src/lib/pos/static-qrs.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(staticQrServerSource, /STATIC_QR_PAYMENTS_PAGE_SIZE = 15/);
+  assert.match(staticQrServerSource, /Query\.greaterThanEqual\("paidAt"/);
+  const staticQrManagerSource = readFileSync(
+    new URL(
+      "../src/app/(dashboard)/qr-estaticos/static-qrs-manager.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(staticQrManagerSource, /Pagos de QR estáticos/);
+  assert.match(staticQrManagerSource, /Filtrar por QR estático/);
+  assert.match(staticQrManagerSource, /api\/pos\/static-qr-payments/);
 });
 
 test("empty checkout renders safely and disables link creation", () => {

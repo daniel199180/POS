@@ -1,7 +1,7 @@
 import DashboardClient from "./dashboard-client";
 import { getCurrentUserContext } from "@/lib/pos/auth";
 import { getPosCatalog } from "@/lib/pos/catalog";
-import { getLogoSettings } from "@/lib/pos/settings";
+import { getLogoSettings, getTimeZoneSettings } from "@/lib/pos/settings";
 import { listStoredPosTabSettings } from "@/lib/pos/pos-ui-settings";
 
 const emptyCatalog = {
@@ -21,12 +21,15 @@ export default async function Home() {
   let catalogError = "";
   let settings = { logo: null };
   let posTabSettingsByBranch = {};
+  let timeZoneSettings = { timeZone: "America/La_Paz" };
 
-  const [catalogResult, settingsResult, tabsResult] = await Promise.allSettled([
-    getPosCatalog(context.userAgent, context),
-    getLogoSettings(context),
-    listStoredPosTabSettings(context),
-  ]);
+  const [catalogResult, settingsResult, tabsResult, timeZoneResult] =
+    await Promise.allSettled([
+      getPosCatalog(context.userAgent, context),
+      getLogoSettings(context),
+      listStoredPosTabSettings(context),
+      getTimeZoneSettings(context),
+    ]);
   if (catalogResult.status === "fulfilled") {
     catalog = catalogResult.value;
   } else {
@@ -36,6 +39,8 @@ export default async function Home() {
   if (settingsResult.status === "fulfilled") settings = settingsResult.value;
   if (tabsResult.status === "fulfilled")
     posTabSettingsByBranch = tabsResult.value;
+  if (timeZoneResult.status === "fulfilled")
+    timeZoneSettings = timeZoneResult.value;
 
   return (
     <DashboardClient
@@ -45,6 +50,7 @@ export default async function Home() {
       catalogError={catalogError}
       settings={settings}
       tabSettingsByBranch={posTabSettingsByBranch}
+      timeZone={timeZoneSettings.timeZone}
     />
   );
 }

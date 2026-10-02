@@ -505,6 +505,7 @@ const collections = [
       { type: "boolean", key: "staticQr", required: false, default: true },
       { type: "boolean", key: "links", required: true },
       { type: "boolean", key: "daily", required: true },
+      { type: "string", key: "timeZone", size: 100, required: false },
       {
         type: "string",
         key: "updatedByUserId",
@@ -594,6 +595,7 @@ const collections = [
       { type: "string", key: "qrPaymentToken", size: 5000, required: true },
       { type: "string", key: "transactionId", size: 50, required: true },
       { type: "string", key: "status", size: 30, required: true },
+      { type: "boolean", key: "archived", required: false, default: false },
       { type: "datetime", key: "lastCheckedAt", required: false },
       { type: "string", key: "lastStatus", size: 30, required: false },
       { type: "float", key: "totalPaid", required: true, default: 0 },

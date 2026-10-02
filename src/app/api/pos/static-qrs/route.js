@@ -11,6 +11,7 @@ export async function GET(request) {
         branchId: url.searchParams.get("branchId"),
         createdByUserId: url.searchParams.get("createdByUserId"),
         status: url.searchParams.get("status"),
+        archived: url.searchParams.get("archived"),
         page: url.searchParams.get("page"),
         pageSize: url.searchParams.get("pageSize"),
       }),

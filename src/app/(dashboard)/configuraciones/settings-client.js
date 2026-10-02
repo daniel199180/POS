@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Image, ImageUp, Loader2, Save, Trash2 } from "lucide-react";
+import { Clock3, Image, ImageUp, Loader2, Save, Trash2 } from "lucide-react";
 import InstituteConnectionCard from "./institute-connection-card";
 
 function formatFileSize(bytes = 0) {
@@ -19,6 +19,7 @@ function formatFileSize(bytes = 0) {
 export default function SettingsClient({
   initialSettings,
   initialInstituteSettings,
+  initialTimeZone,
   canManage,
 }) {
   const [settings, setSettings] = useState(initialSettings);
@@ -28,6 +29,10 @@ export default function SettingsClient({
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [timeZone, setTimeZone] = useState(
+    initialTimeZone?.timeZone || "America/La_Paz",
+  );
+  const [isSavingTimeZone, setIsSavingTimeZone] = useState(false);
   const logo = settings.logo;
   const displayLogoUrl = previewUrl || logo?.url || "";
   const allowedTypes = useMemo(
@@ -133,6 +138,41 @@ export default function SettingsClient({
       setError(deleteError.message || "No se pudo eliminar el logo.");
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function saveTimeZone(event) {
+    event.preventDefault();
+
+    if (!canManage) {
+      return;
+    }
+
+    setIsSavingTimeZone(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const response = await fetch("/api/pos/settings/timezone", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ timeZone }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload.message || "No se pudo guardar la zona horaria.",
+        );
+      }
+
+      setTimeZone(payload.settings.timeZone);
+      setMessage("Zona horaria guardada.");
+    } catch (saveError) {
+      setError(saveError.message || "No se pudo guardar la zona horaria.");
+    } finally {
+      setIsSavingTimeZone(false);
     }
   }
 
@@ -256,6 +296,57 @@ export default function SettingsClient({
           </div>
         </form>
       </div>
+
+      <form
+        onSubmit={saveTimeZone}
+        className="rounded-md border border-neutral-800 bg-neutral-900 p-4"
+      >
+        <div className="flex items-start gap-3">
+          <div className="grid size-10 shrink-0 place-items-center rounded-md bg-violet-950 text-violet-300">
+            <Clock3 className="size-5" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-neutral-500 uppercase">
+              Reloj del POS
+            </p>
+            <h2 className="mt-1 text-lg font-semibold">Zona horaria</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Define la zona horaria que usará el reloj visible en el punto de
+              venta.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="block flex-1 text-sm font-medium text-neutral-300">
+            Zona horaria
+            <select
+              value={timeZone}
+              onChange={(event) => setTimeZone(event.target.value)}
+              disabled={!canManage || isSavingTimeZone}
+              className="mt-2 block h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {(initialTimeZone?.options || []).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={!canManage || isSavingTimeZone}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-neutral-100 px-4 text-sm font-semibold text-neutral-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          >
+            {isSavingTimeZone ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Save className="size-4" />
+            )}
+            Guardar zona horaria
+          </button>
+        </div>
+      </form>
 
       <InstituteConnectionCard
         initialSettings={initialInstituteSettings}

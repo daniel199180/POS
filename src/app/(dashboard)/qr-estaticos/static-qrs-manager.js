@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  Ban,
+  Archive,
   Download,
   Eye,
   Loader2,
@@ -13,6 +13,10 @@ import {
 
 function date(value) {
   return value ? new Date(value).toLocaleString("es-BO") : "—";
+}
+
+function dateOnly(value) {
+  return value ? new Date(value).toLocaleDateString("es-BO") : "—";
 }
 
 function money(value) {
@@ -48,6 +52,14 @@ export default function StaticQrsManager({
   initialFilters,
   branchOptions = [],
   creatorOptions = [],
+  qrOptions = [],
+  initialPaymentData = { payments: [], total: 0, page: 1, totalPages: 1 },
+  initialPaymentFilters = {
+    branchId: "",
+    staticQrId: "",
+    page: 1,
+    pageSize: 15,
+  },
 }) {
   const [filters, setFilters] = useState(initialFilters);
   const [qrs, setQrs] = useState(initialData.qrs || []);
@@ -58,8 +70,27 @@ export default function StaticQrsManager({
   const [error, setError] = useState("");
   const [selectedQr, setSelectedQr] = useState(null);
   const [payments, setPayments] = useState([]);
+  const [detailPaymentsTotal, setDetailPaymentsTotal] = useState(0);
+  const [detailPaymentsPage, setDetailPaymentsPage] = useState(1);
+  const [detailPaymentsTotalPages, setDetailPaymentsTotalPages] = useState(1);
+  const [detailPaymentsDate, setDetailPaymentsDate] = useState("");
   const [isChecking, setIsChecking] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [qrToArchive, setQrToArchive] = useState(null);
+  const [paymentFilters, setPaymentFilters] = useState(initialPaymentFilters);
+  const [staticPayments, setStaticPayments] = useState(
+    initialPaymentData.payments || [],
+  );
+  const [paymentsTotal, setPaymentsTotal] = useState(
+    initialPaymentData.total || 0,
+  );
+  const [paymentsPage, setPaymentsPage] = useState(
+    initialPaymentData.page || 1,
+  );
+  const [paymentsTotalPages, setPaymentsTotalPages] = useState(
+    initialPaymentData.totalPages || 1,
+  );
+  const [isPaymentsLoading, setIsPaymentsLoading] = useState(false);
 
   async function loadQrs(nextFilters = filters) {
     setIsLoading(true);
@@ -69,7 +100,7 @@ export default function StaticQrsManager({
         page: String(nextFilters.page || 1),
         pageSize: String(nextFilters.pageSize || 25),
       });
-      for (const key of ["branchId", "createdByUserId", "status"]) {
+      for (const key of ["branchId", "createdByUserId", "status", "archived"]) {
         if (nextFilters[key]) params.set(key, nextFilters[key]);
       }
       const response = await fetch(`/api/pos/static-qrs?${params}`, {
@@ -89,6 +120,48 @@ export default function StaticQrsManager({
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function loadStaticPayments(nextFilters = paymentFilters) {
+    setIsPaymentsLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        page: String(nextFilters.page || 1),
+        pageSize: String(nextFilters.pageSize || 15),
+      });
+      if (nextFilters.branchId) params.set("branchId", nextFilters.branchId);
+      if (nextFilters.staticQrId)
+        params.set("staticQrId", nextFilters.staticQrId);
+      const response = await fetch(`/api/pos/static-qr-payments?${params}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "No se pudieron cargar los pagos.");
+      }
+      setStaticPayments(payload.payments || []);
+      setPaymentsTotal(payload.total || 0);
+      setPaymentsPage(payload.page || 1);
+      setPaymentsTotalPages(payload.totalPages || 1);
+    } catch (paymentsError) {
+      setError(paymentsError.message);
+    } finally {
+      setIsPaymentsLoading(false);
+    }
+  }
+
+  function updatePaymentFilter(value) {
+    const nextFilters = { ...paymentFilters, staticQrId: value, page: 1 };
+    setPaymentFilters(nextFilters);
+    loadStaticPayments(nextFilters);
+  }
+
+  function goToPaymentPage(nextPage) {
+    const nextFilters = { ...paymentFilters, page: nextPage };
+    setPaymentFilters(nextFilters);
+    loadStaticPayments(nextFilters);
   }
 
   function updateFilter(key, value) {
@@ -115,9 +188,13 @@ export default function StaticQrsManager({
   async function openDetails(qr) {
     setSelectedQr(qr);
     setPayments([]);
+    setDetailPaymentsTotal(0);
+    setDetailPaymentsPage(1);
+    setDetailPaymentsTotalPages(1);
+    setDetailPaymentsDate("");
     setError("");
     try {
-      const response = await fetch(`/api/pos/static-qrs/${qr.id}`, {
+      const response = await fetch(`/api/pos/static-qrs/${qr.id}?page=1`, {
         cache: "no-store",
         credentials: "same-origin",
       });
@@ -129,8 +206,46 @@ export default function StaticQrsManager({
       }
       setSelectedQr(payload.qr);
       setPayments(payload.payments || []);
+      setDetailPaymentsTotal(payload.paymentsTotal || 0);
+      setDetailPaymentsPage(payload.paymentsPage || 1);
+      setDetailPaymentsTotalPages(payload.paymentsTotalPages || 1);
+      setDetailPaymentsDate(payload.paymentsDate || "");
     } catch (detailsError) {
       setError(detailsError.message);
+    }
+  }
+
+  function requestArchive(qr) {
+    if (!qr || isArchiving) return;
+    setError("");
+    setQrToArchive(qr);
+  }
+
+  async function archiveQr() {
+    if (!qrToArchive || isArchiving) return;
+
+    setIsArchiving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/pos/static-qrs/" + qrToArchive.id, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "archive" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "No se pudo archivar el QR.");
+      }
+
+      setQrs((current) => current.filter((qr) => qr.id !== payload.qr.id));
+      setTotal((current) => Math.max(current - 1, 0));
+      setSelectedQr(null);
+      setQrToArchive(null);
+    } catch (archiveError) {
+      setError(archiveError.message);
+    } finally {
+      setIsArchiving(false);
     }
   }
 
@@ -143,7 +258,7 @@ export default function StaticQrsManager({
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "status" }),
+        body: JSON.stringify({ action: "status", page: detailPaymentsPage }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -153,6 +268,10 @@ export default function StaticQrsManager({
       }
       setSelectedQr(payload.qr);
       setPayments(payload.payments || []);
+      setDetailPaymentsTotal(payload.paymentsTotal || 0);
+      setDetailPaymentsPage(payload.paymentsPage || 1);
+      setDetailPaymentsTotalPages(payload.paymentsTotalPages || 1);
+      setDetailPaymentsDate(payload.paymentsDate || "");
       setQrs((current) =>
         current.map((qr) => (qr.id === payload.qr.id ? payload.qr : qr)),
       );
@@ -163,35 +282,31 @@ export default function StaticQrsManager({
     }
   }
 
-  async function cancelQr(qrToCancel = selectedQr) {
-    if (!qrToCancel || isCancelling) return;
-    const wasSelected = selectedQr?.id === qrToCancel.id;
-    if (
-      !window.confirm(
-        `¿Deshabilitar el QR "${qrToCancel.description}"? Ya no podrá recibir nuevos pagos.`,
-      )
-    ) {
-      return;
-    }
-    setIsCancelling(true);
+  async function loadPaymentsPage(nextPage) {
+    if (!selectedQr || isChecking) return;
+    setIsChecking(true);
     setError("");
     try {
-      const response = await fetch(`/api/pos/static-qrs/${qrToCancel.id}`, {
-        method: "DELETE",
-        credentials: "same-origin",
-      });
+      const response = await fetch(
+        `/api/pos/static-qrs/${selectedQr.id}?page=${nextPage}`,
+        { cache: "no-store", credentials: "same-origin" },
+      );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.message || "No se pudo deshabilitar el QR.");
+        throw new Error(
+          payload.message || "No se pudieron consultar los pagos.",
+        );
       }
-      if (wasSelected) setSelectedQr(payload.qr);
-      setQrs((current) =>
-        current.map((qr) => (qr.id === payload.qr.id ? payload.qr : qr)),
-      );
-    } catch (cancelError) {
-      setError(cancelError.message);
+      setSelectedQr(payload.qr);
+      setPayments(payload.payments || []);
+      setDetailPaymentsTotal(payload.paymentsTotal || 0);
+      setDetailPaymentsPage(payload.paymentsPage || 1);
+      setDetailPaymentsTotalPages(payload.paymentsTotalPages || 1);
+      setDetailPaymentsDate(payload.paymentsDate || "");
+    } catch (pageError) {
+      setError(pageError.message);
     } finally {
-      setIsCancelling(false);
+      setIsChecking(false);
     }
   }
 
@@ -220,7 +335,7 @@ export default function StaticQrsManager({
         </button>
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-neutral-800 bg-neutral-900/50 p-3 md:grid-cols-3">
+      <div className="grid gap-3 rounded-lg border border-neutral-800 bg-neutral-900/50 p-3 md:grid-cols-4">
         <label className="text-xs font-medium text-neutral-400">
           Sucursal
           <select
@@ -265,6 +380,18 @@ export default function StaticQrsManager({
             <option value="cancelled">Deshabilitados</option>
           </select>
         </label>
+        <label className="text-xs font-medium text-neutral-400">
+          Visibilidad
+          <select
+            value={filters.archived}
+            onChange={(event) => updateFilter("archived", event.target.value)}
+            className="mt-1 h-10 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none focus:border-violet-400"
+          >
+            <option value="false">Visibles</option>
+            <option value="true">Archivados</option>
+            <option value="all">Todos</option>
+          </select>
+        </label>
       </div>
 
       {error ? (
@@ -283,25 +410,28 @@ export default function StaticQrsManager({
             className="w-full rounded-md border border-neutral-800 bg-neutral-950 p-4"
           >
             <div className="flex flex-wrap items-center gap-4">
-              <div className="min-w-[220px] flex-1">
+              <div className="flex min-w-[220px] flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h2 className="truncate font-semibold text-neutral-100">
                   {qr.description}
                 </h2>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Creado {date(qr.createdAt)} · {qr.branchName} ·{" "}
-                  {qr.createdByName || "—"}
+                <p className="text-xs text-neutral-500">
+                  Creado {date(qr.createdAt)}
                 </p>
               </div>
-              <div className="rounded border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs">
-                <p className="text-neutral-500">Pagos realizados</p>
-                <p className="mt-1 font-semibold text-neutral-100">
+              <span className="inline-flex shrink-0 items-center gap-2 text-xs font-medium text-neutral-400">
+                Pagos
+                <span className="grid min-w-6 place-items-center rounded-full border border-violet-800 bg-violet-950 px-1.5 py-0.5 font-semibold text-violet-200">
                   {qr.paymentsCount}
-                </p>
-              </div>
+                </span>
+              </span>
               <span
-                className={`shrink-0 rounded-full border px-2 py-1 text-[11px] ${qr.status === "cancelled" ? "border-neutral-700 bg-neutral-900 text-neutral-500" : "border-emerald-800 bg-emerald-950 text-emerald-300"}`}
+                className={`shrink-0 rounded-full border px-2 py-1 text-[11px] ${qr.archived ? "border-violet-800 bg-violet-950 text-violet-300" : qr.status === "cancelled" ? "border-neutral-700 bg-neutral-900 text-neutral-500" : "border-emerald-800 bg-emerald-950 text-emerald-300"}`}
               >
-                {qr.status === "cancelled" ? "Deshabilitado" : "Activo"}
+                {qr.archived
+                  ? "Archivado"
+                  : qr.status === "cancelled"
+                    ? "Deshabilitado"
+                    : "Activo"}
               </span>
               <div className="flex flex-wrap gap-2 sm:ml-auto">
                 <button
@@ -318,14 +448,14 @@ export default function StaticQrsManager({
                 >
                   <Eye className="size-3.5" /> Consultar pagos
                 </button>
-                {qr.status !== "cancelled" ? (
+                {!qr.archived ? (
                   <button
                     type="button"
-                    onClick={() => cancelQr(qr)}
-                    disabled={isCancelling}
-                    className="inline-flex h-9 items-center gap-1.5 rounded border border-red-900 px-3 text-xs font-semibold text-red-200 hover:bg-red-950 disabled:opacity-50"
+                    onClick={() => requestArchive(qr)}
+                    disabled={isArchiving}
+                    className="inline-flex h-9 items-center gap-1.5 rounded border border-neutral-700 px-3 text-xs font-semibold text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
                   >
-                    <Ban className="size-3.5" /> Deshabilitar
+                    <Archive className="size-3.5" /> Archivar
                   </button>
                 ) : null}
               </div>
@@ -363,6 +493,116 @@ export default function StaticQrsManager({
         </div>
       </div>
 
+      <section className="rounded-lg border border-neutral-800 bg-neutral-950 p-4 lg:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-neutral-100">
+              Pagos de QR estáticos
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Todos los pagos recibidos mediante QR estáticos.
+            </p>
+          </div>
+          <label className="text-xs font-medium text-neutral-400">
+            Filtrar por QR estático
+            <select
+              value={paymentFilters.staticQrId}
+              onChange={(event) => updatePaymentFilter(event.target.value)}
+              className="mt-1 h-10 min-w-64 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none focus:border-violet-400"
+            >
+              <option value="">Todos los QR estáticos</option>
+              {qrOptions.map((qr) => (
+                <option key={qr.id} value={qr.id}>
+                  {qr.description} · {qr.branchName}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="mt-4 overflow-x-auto rounded-md border border-neutral-800">
+          <table className="w-full min-w-[900px] text-left text-xs">
+            <thead className="bg-neutral-900 text-neutral-500">
+              <tr>
+                {[
+                  "Fecha",
+                  "QR estático",
+                  "Sucursal",
+                  "Monto",
+                  "Pagador",
+                  "Banco",
+                  "Referencia",
+                ].map((heading) => (
+                  <th key={heading} className="px-3 py-2 font-medium">
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {staticPayments.map((payment) => (
+                <tr key={payment.id} className="border-t border-neutral-800">
+                  <td className="px-3 py-3 text-neutral-400">
+                    {date(payment.paidAt)}
+                  </td>
+                  <td className="px-3 py-3 font-semibold text-neutral-100">
+                    {payment.staticQrDescription}
+                  </td>
+                  <td className="px-3 py-3 text-neutral-400">
+                    {payment.staticQrBranchName}
+                  </td>
+                  <td className="px-3 py-3 font-semibold text-emerald-300">
+                    {money(payment.amount)}
+                  </td>
+                  <td className="px-3 py-3 text-neutral-200">
+                    {payment.senderName || "—"}
+                  </td>
+                  <td className="px-3 py-3 text-neutral-400">
+                    {payment.bankName || "—"}
+                  </td>
+                  <td className="px-3 py-3 text-neutral-500">
+                    {payment.bankOrder || payment.providerPaymentId}
+                  </td>
+                </tr>
+              ))}
+              {!staticPayments.length && !isPaymentsLoading ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-3 py-10 text-center text-neutral-500"
+                  >
+                    No hay pagos registrados para este filtro.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-neutral-500">
+          <span>
+            {paymentsTotal} pagos · Página {paymentsPage} de{" "}
+            {paymentsTotalPages}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => goToPaymentPage(paymentsPage - 1)}
+              disabled={paymentsPage <= 1 || isPaymentsLoading}
+              className="h-9 rounded-md border border-neutral-700 px-3 font-semibold text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => goToPaymentPage(paymentsPage + 1)}
+              disabled={paymentsPage >= paymentsTotalPages || isPaymentsLoading}
+              className="h-9 rounded-md border border-neutral-700 px-3 font-semibold text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      </section>
+
       {selectedQr ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6">
           <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl">
@@ -387,7 +627,7 @@ export default function StaticQrsManager({
             <div className="min-h-0 flex-1 overflow-auto p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-neutral-100">
-                  Pagos realizados: {selectedQr.paymentsCount}
+                  Pagos del día: {detailPaymentsTotal}
                 </p>
                 <div className="flex gap-2">
                   {selectedQr.status !== "cancelled" ? (
@@ -405,19 +645,19 @@ export default function StaticQrsManager({
                       Consultar banco
                     </button>
                   ) : null}
-                  {selectedQr.status !== "cancelled" ? (
+                  {!selectedQr.archived ? (
                     <button
                       type="button"
-                      onClick={() => cancelQr()}
-                      disabled={isCancelling}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-md border border-red-900 px-3 text-xs font-semibold text-red-200 hover:bg-red-950 disabled:opacity-50"
+                      onClick={() => requestArchive(selectedQr)}
+                      disabled={isArchiving}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-700 px-3 text-xs font-semibold text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
                     >
-                      {isCancelling ? (
+                      {isArchiving ? (
                         <Loader2 className="size-3.5 animate-spin" />
                       ) : (
-                        <Ban className="size-3.5" />
+                        <Archive className="size-3.5" />
                       )}{" "}
-                      Deshabilitar
+                      Archivar
                     </button>
                   ) : null}
                 </div>
@@ -464,12 +704,41 @@ export default function StaticQrsManager({
                           colSpan={5}
                           className="px-3 py-10 text-center text-neutral-500"
                         >
-                          Todavía no hay pagos registrados.
+                          No hay pagos registrados hoy.
                         </td>
                       </tr>
                     ) : null}
                   </tbody>
                 </table>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
+                <span>
+                  {detailPaymentsDate
+                    ? `Fecha: ${dateOnly(`${detailPaymentsDate}T12:00:00-04:00`)}`
+                    : "Pagos del día"}{" "}
+                  · Página {detailPaymentsPage} de {detailPaymentsTotalPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => loadPaymentsPage(detailPaymentsPage - 1)}
+                    disabled={detailPaymentsPage <= 1 || isChecking}
+                    className="h-8 rounded border border-neutral-700 px-3 font-semibold text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadPaymentsPage(detailPaymentsPage + 1)}
+                    disabled={
+                      detailPaymentsPage >= detailPaymentsTotalPages ||
+                      isChecking
+                    }
+                    className="h-8 rounded border border-neutral-700 px-3 font-semibold text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Siguiente
+                  </button>
+                </div>
               </div>
               {selectedQr.lastError ? (
                 <p className="mt-3 rounded-md border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
@@ -484,6 +753,40 @@ export default function StaticQrsManager({
                 className="h-10 rounded-md border border-neutral-700 px-4 text-sm font-semibold text-neutral-200 hover:bg-neutral-800"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {qrToArchive ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-4 py-6">
+          <div className="w-full max-w-md rounded-xl border border-neutral-700 bg-neutral-950 p-5 shadow-2xl">
+            <h2 className="text-lg font-semibold text-neutral-100">
+              Archivar QR estático
+            </h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              ¿Quieres archivar “{qrToArchive.description}”? Se conservará con
+              sus pagos, pero dejará de aparecer en este panel.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setQrToArchive(null)}
+                disabled={isArchiving}
+                className="h-10 rounded-md border border-neutral-700 px-4 text-sm font-semibold text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={archiveQr}
+                disabled={isArchiving}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-400 px-4 text-sm font-semibold text-violet-950 hover:bg-violet-300 disabled:opacity-50"
+              >
+                {isArchiving ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                Archivar QR
               </button>
             </div>
           </div>

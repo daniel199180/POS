@@ -1,4 +1,4 @@
-import { AppwriteException } from "node-appwrite";
+import { AppwriteException, ID } from "node-appwrite";
 import { InputFile } from "node-appwrite/file";
 import { cache } from "react";
 import { appwriteConfig } from "../appwrite/config.js";
@@ -6,9 +6,26 @@ import { createAdminClient } from "../appwrite/admin.js";
 import { ForbiddenError } from "./auth-core.js";
 
 const LOGO_FILE_ID = "pos_logo";
+const GLOBAL_POS_SETTINGS_ID = "global";
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
 const allowedLogoTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 const allowedLogoExtensions = ["png", "jpg", "jpeg", "webp"];
+
+export const DEFAULT_TIME_ZONE = "America/La_Paz";
+export const TIME_ZONE_OPTIONS = [
+  { value: "America/La_Paz", label: "Bolivia (America/La_Paz)" },
+  {
+    value: "America/Argentina/Buenos_Aires",
+    label: "Argentina (Buenos Aires)",
+  },
+  { value: "America/Sao_Paulo", label: "Brasil (São Paulo)" },
+  { value: "America/New_York", label: "Estados Unidos (Nueva York)" },
+  { value: "America/Los_Angeles", label: "Estados Unidos (Los Ángeles)" },
+  { value: "America/Mexico_City", label: "México (Ciudad de México)" },
+  { value: "Europe/Madrid", label: "España (Madrid)" },
+  { value: "UTC", label: "UTC" },
+];
+const validTimeZones = new Set(TIME_ZONE_OPTIONS.map((option) => option.value));
 
 function isNotFound(error) {
   return error instanceof AppwriteException && error.code === 404;
@@ -18,6 +35,32 @@ function inputError(message) {
   const error = new Error(message);
   error.status = 400;
   return error;
+}
+
+async function getGlobalPosSettings(databases) {
+  try {
+    return await databases.getDocument({
+      databaseId: appwriteConfig.databaseId,
+      collectionId: appwriteConfig.collections.posUiSettings,
+      documentId: GLOBAL_POS_SETTINGS_ID,
+    });
+  } catch (error) {
+    if (isNotFound(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+function toTimeZoneSettings(document) {
+  return {
+    timeZone: validTimeZones.has(document?.timeZone)
+      ? document.timeZone
+      : DEFAULT_TIME_ZONE,
+    options: TIME_ZONE_OPTIONS,
+    updatedAt: document?.$updatedAt || "",
+  };
 }
 
 function assertCanManageSettings(context) {
@@ -125,6 +168,51 @@ const readLogoSettings = cache(async (userAgent = "") => {
 
 export async function getLogoSettings(context) {
   return readLogoSettings(context.userAgent || "");
+}
+
+export async function getTimeZoneSettings(context) {
+  const { databases } = createAdminClient(context.userAgent || "");
+  const document = await getGlobalPosSettings(databases);
+
+  return toTimeZoneSettings(document);
+}
+
+export async function updateTimeZoneSettings(context, input) {
+  assertCanManageSettings(context);
+
+  const timeZone = String(input?.timeZone || "").trim();
+  if (!validTimeZones.has(timeZone)) {
+    throw inputError("Selecciona una zona horaria válida.");
+  }
+
+  const { databases } = createAdminClient(context.userAgent || "");
+  const existing = await getGlobalPosSettings(databases);
+  const data = {
+    products: existing?.products ?? true,
+    monthly: existing?.monthly ?? true,
+    custom: existing?.custom ?? true,
+    staticQr: existing?.staticQr ?? true,
+    links: existing?.links ?? true,
+    daily: existing?.daily ?? true,
+    timeZone,
+    updatedByUserId: context.user.id,
+  };
+  const document = existing
+    ? await databases.updateDocument({
+        databaseId: appwriteConfig.databaseId,
+        collectionId: appwriteConfig.collections.posUiSettings,
+        documentId: GLOBAL_POS_SETTINGS_ID,
+        data,
+      })
+    : await databases.createDocument({
+        databaseId: appwriteConfig.databaseId,
+        collectionId: appwriteConfig.collections.posUiSettings,
+        documentId: ID.custom(GLOBAL_POS_SETTINGS_ID),
+        data,
+        permissions: [],
+      });
+
+  return toTimeZoneSettings(document);
 }
 
 export async function getLogoImage(context) {

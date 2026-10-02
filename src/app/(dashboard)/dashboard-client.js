@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Banknote,
+  Clock3,
   CircleCheck,
   CreditCard,
   Download,
@@ -131,6 +132,25 @@ function formatReportDate(value = "") {
   return `${day}/${month}/${year}`;
 }
 
+function formatClock(value, timeZone = "America/La_Paz") {
+  try {
+    return new Intl.DateTimeFormat("es-BO", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(value);
+  } catch {
+    return new Intl.DateTimeFormat("es-BO", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(value);
+  }
+}
+
 function formatSaleTime(value) {
   if (!value) {
     return "-";
@@ -243,6 +263,7 @@ export default function DashboardClient({
   catalogError = "",
   settings = { logo: null },
   tabSettingsByBranch = {},
+  timeZone = "America/La_Paz",
 }) {
   const requestIdRef = useRef(0);
   const dailyIncomeRequestIdRef = useRef(0);
@@ -257,6 +278,7 @@ export default function DashboardClient({
   const customerDisplaySnapshotRef = useRef(null);
   const paymentSuccessAudioRef = useRef(null);
   const [displaySessionId, setDisplaySessionId] = useState("");
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [selectedBranchId, setSelectedBranchId] = useState(
     catalog.branches[0]?.id || "",
   );
@@ -310,6 +332,15 @@ export default function DashboardClient({
   const [dailyIncomeError, setDailyIncomeError] = useState("");
   const logoUrl = settings?.logo?.url || "";
   const qrLogoUrl = logoUrl && !hasQrLogoImageError ? logoUrl : "";
+  const clockLabel = formatClock(currentTime, timeZone);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     if (!enabledPosTabs[activePosTab]) {
@@ -2205,86 +2236,54 @@ export default function DashboardClient({
               activePosTab === "daily" ? "hidden" : ""
             }`}
           >
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-xs font-semibold tracking-[0.14em] text-neutral-500 uppercase">
-                  Ingresos del dia
-                </p>
-                <p className="mt-1 text-sm text-neutral-300">
-                  {selectedBranch?.name || "Sucursal"} -{" "}
-                  {user.name || user.email}
-                </p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  {formatReportDate(dailyIncome.date)}
-                  {dailyIncome.isLimited
-                    ? " - reporte limitado por volumen"
-                    : ""}
-                </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
+                <div className="rounded-md border border-violet-800 bg-violet-950/30 px-3 py-2">
+                  <p className="text-[11px] font-medium text-violet-200">
+                    Ingresos totales
+                  </p>
+                  <p className="mt-0.5 text-base font-semibold">
+                    {isLoadingDailyIncome ? "..." : money(dailyTotal)}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2">
+                  <p className="text-[11px] font-medium text-neutral-500">
+                    Efectivo
+                  </p>
+                  <p className="mt-0.5 text-base font-semibold">
+                    {isLoadingDailyIncome ? "..." : money(dailyCashTotal)}
+                  </p>
+                </div>
+                <div className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2">
+                  <p className="text-[11px] font-medium text-neutral-500">QR</p>
+                  <p className="mt-0.5 text-base font-semibold">
+                    {isLoadingDailyIncome ? "..." : money(dailyQrTotal)}
+                  </p>
+                </div>
               </div>
 
-              <button
-                type="button"
-                onClick={downloadDailyIncomePdf}
-                disabled={
-                  !selectedBranchId ||
-                  isDownloadingDailyIncome ||
-                  isLoadingDailyIncome
-                }
-                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-neutral-700 bg-neutral-950 px-4 text-sm font-semibold text-neutral-100 transition hover:border-neutral-400 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
-              >
-                {isDownloadingDailyIncome ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Download className="size-4" />
-                )}
-                Descargar PDF
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-neutral-500">Efectivo</p>
-                <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : money(dailyCashTotal)}
-                </p>
-              </div>
-              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-violet-400">
-                  Ingresos personalizados
-                </p>
-                <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : money(dailyCustomIncome)}
-                </p>
-              </div>
-              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-amber-300">
-                  Ingresos por enlace
-                </p>
-                <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : money(dailyPaymentLinkIncome)}
-                </p>
-              </div>
-              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-neutral-500">QR</p>
-                <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : money(dailyQrTotal)}
-                </p>
-              </div>
-              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-emerald-400">
-                  Ingresos productos
-                </p>
-                <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : money(dailyProductsIncome)}
-                </p>
-              </div>
-              <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-                <p className="text-xs font-medium text-cyan-400">
-                  Ingresos mensualidades
-                </p>
-                <p className="mt-1 text-base font-semibold">
-                  {isLoadingDailyIncome ? "..." : money(dailyMonthlyIncome)}
-                </p>
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="inline-flex h-10 items-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm font-semibold text-neutral-300">
+                  <Clock3 className="size-4 text-violet-300" />
+                  <span className="tabular-nums">{clockLabel}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={downloadDailyIncomePdf}
+                  disabled={
+                    !selectedBranchId ||
+                    isDownloadingDailyIncome ||
+                    isLoadingDailyIncome
+                  }
+                  className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-neutral-700 bg-neutral-950 px-4 text-sm font-semibold text-neutral-100 transition hover:border-neutral-400 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+                >
+                  {isDownloadingDailyIncome ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Download className="size-4" />
+                  )}
+                  Descargar PDF
+                </button>
               </div>
             </div>
 

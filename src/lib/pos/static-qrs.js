@@ -11,6 +11,7 @@ import {
 } from "./baneco-qr.js";
 
 const { databaseId, collections } = appwriteConfig;
+const STATIC_QR_PAYMENTS_PAGE_SIZE = 15;
 
 function text(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
@@ -49,6 +50,7 @@ function toStaticQr(document, { includeImage = true } = {}) {
     qrImage: includeImage ? document.qrImage || "" : "",
     transactionId: document.transactionId,
     status: document.status,
+    archived: document.archived === true,
     lastStatus: document.lastStatus || "pending",
     lastCheckedAt: document.lastCheckedAt || "",
     totalPaid: money(document.totalPaid),
@@ -188,17 +190,64 @@ function normalizeProviderPayment(payment, status) {
   };
 }
 
-async function listQrPayments(databases, staticQrId) {
+function getTodayRange() {
+  const date = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/La_Paz",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  return {
+    date,
+    from: new Date(`${date}T00:00:00-04:00`).toISOString(),
+    to: new Date(`${date}T23:59:59.999-04:00`).toISOString(),
+  };
+}
+
+async function listQrPaymentsPage(
+  databases,
+  staticQrId,
+  { page = 1, todayOnly = false } = {},
+) {
+  const safePage = Math.max(Number.parseInt(page, 10) || 1, 1);
+  const queries = [Query.equal("staticQrId", staticQrId)];
+  let date = "";
+
+  if (todayOnly) {
+    const today = getTodayRange();
+    date = today.date;
+    queries.push(
+      Query.greaterThanEqual("paidAt", today.from),
+      Query.lessThanEqual("paidAt", today.to),
+    );
+  }
+
+  const pageSize = todayOnly ? STATIC_QR_PAYMENTS_PAGE_SIZE : 500;
   const result = await databases.listDocuments({
     databaseId,
     collectionId: collections.staticQrPayments,
     queries: [
-      Query.equal("staticQrId", staticQrId),
+      ...queries,
       Query.orderDesc("paidAt"),
-      Query.limit(500),
+      Query.limit(pageSize),
+      ...(todayOnly ? [Query.offset((safePage - 1) * pageSize)] : []),
     ],
   });
-  return result.documents.map(toPayment);
+
+  return {
+    payments: result.documents.map(toPayment),
+    total: result.total,
+    page: safePage,
+    pageSize,
+    totalPages: Math.max(Math.ceil(result.total / pageSize), 1),
+    date,
+  };
+}
+
+async function listQrPayments(databases, staticQrId) {
+  const result = await listQrPaymentsPage(databases, staticQrId);
+  return result.payments;
 }
 
 function staticSaleId(paymentId) {
@@ -421,6 +470,7 @@ export async function createStaticQr(context, input = {}) {
         qrPaymentToken: generatedQr.paymentToken,
         transactionId: generatedQr.transactionId,
         status: "active",
+        archived: false,
         lastStatus: generatedQr.status,
         totalPaid: 0,
         paymentsCount: 0,
@@ -467,21 +517,38 @@ export async function getStaticQrFilterOptions(context) {
     queries: [
       ...staticQrScopeQueries(context, ""),
       Query.limit(500),
-      Query.select(["createdByUserId", "createdByName"]),
+      Query.select([
+        "$id",
+        "createdByUserId",
+        "createdByName",
+        "description",
+        "branchName",
+        "status",
+      ]),
     ],
   });
   const creators = new Map();
+  const qrs = [];
   for (const document of result.documents) {
     if (!document.createdByUserId) continue;
     creators.set(document.createdByUserId, {
       id: document.createdByUserId,
       name: document.createdByName || document.createdByUserId,
     });
+    qrs.push({
+      id: document.$id,
+      description: document.description,
+      branchName: document.branchName,
+      status: document.status,
+    });
   }
 
   return {
     creators: [...creators.values()].sort((left, right) =>
       left.name.localeCompare(right.name),
+    ),
+    qrs: qrs.sort((left, right) =>
+      left.description.localeCompare(right.description),
     ),
   };
 }
@@ -491,6 +558,7 @@ export async function listStaticQrs(context, input = {}) {
   if (branchId) assertBranchAccess(context, branchId);
   const createdByUserId = text(input.createdByUserId);
   const status = text(input.status);
+  const archivedFilter = text(input.archived);
   const page = Math.max(Number.parseInt(input.page, 10) || 1, 1);
   const defaultPageSize = input.pageSize ? 25 : 100;
   const pageSize = Math.min(
@@ -507,6 +575,11 @@ export async function listStaticQrs(context, input = {}) {
     ...(status === "active" || status === "cancelled"
       ? [Query.equal("status", status)]
       : []),
+    ...(archivedFilter === "true"
+      ? [Query.equal("archived", true)]
+      : archivedFilter === "all"
+        ? []
+        : [Query.notEqual("archived", true)]),
     Query.orderDesc("$createdAt"),
     Query.limit(pageSize),
     Query.offset((page - 1) * pageSize),
@@ -527,7 +600,92 @@ export async function listStaticQrs(context, input = {}) {
   };
 }
 
-export async function getStaticQrDetails(context, qrId) {
+export async function archiveStaticQr(context, qrId) {
+  const { databases } = createAdminClient(context.userAgent);
+  const document = await getStaticQrDocument(databases, qrId);
+  await assertStaticQrAccess(context, document);
+
+  if (document.archived === true) {
+    return toStaticQr(document);
+  }
+
+  const updated = await databases.updateDocument({
+    databaseId,
+    collectionId: collections.staticQrs,
+    documentId: document.$id,
+    data: { archived: true },
+  });
+
+  return toStaticQr(updated);
+}
+
+export async function listStaticQrPayments(context, input = {}) {
+  const branchId = text(input.branchId);
+  const staticQrId = text(input.staticQrId);
+  if (branchId) assertBranchAccess(context, branchId);
+
+  const page = Math.max(Number.parseInt(input.page, 10) || 1, 1);
+  const pageSize = Math.min(
+    Math.max(Number.parseInt(input.pageSize, 10) || 15, 1),
+    100,
+  );
+  const { databases } = createAdminClient(context.userAgent);
+  const queries = [];
+
+  if (staticQrId) {
+    const staticQr = await getStaticQrDocument(databases, staticQrId);
+    await assertStaticQrAccess(context, staticQr);
+    queries.push(Query.equal("staticQrId", staticQrId));
+  } else {
+    queries.push(...staticQrScopeQueries(context, branchId));
+  }
+
+  const result = await databases.listDocuments({
+    databaseId,
+    collectionId: collections.staticQrPayments,
+    queries: [
+      ...queries,
+      Query.orderDesc("paidAt"),
+      Query.limit(pageSize),
+      Query.offset((page - 1) * pageSize),
+    ],
+  });
+  const qrIds = [
+    ...new Set(result.documents.map((document) => document.staticQrId)),
+  ];
+  const qrDocuments = await Promise.all(
+    qrIds.map(async (id) => {
+      try {
+        return await getStaticQrDocument(databases, id);
+      } catch (error) {
+        if (error?.status === 404 || error?.code === 404) return null;
+        throw error;
+      }
+    }),
+  );
+  const qrById = new Map(
+    qrDocuments.filter(Boolean).map((document) => [document.$id, document]),
+  );
+
+  return {
+    payments: result.documents.map((document) => {
+      const staticQr = qrById.get(document.staticQrId);
+      return {
+        ...toPayment(document),
+        staticQrId: document.staticQrId,
+        staticQrDescription: staticQr?.description || "QR estático",
+        staticQrBranchName: staticQr?.branchName || "—",
+        staticQrStatus: staticQr?.status || "—",
+      };
+    }),
+    total: result.total,
+    page,
+    pageSize,
+    totalPages: Math.max(Math.ceil(result.total / pageSize), 1),
+  };
+}
+
+export async function getStaticQrDetails(context, qrId, { page = 1 } = {}) {
   const { databases } = createAdminClient(context.userAgent);
   const document = await getStaticQrDocument(databases, qrId);
   await assertStaticQrAccess(context, document);
@@ -535,13 +693,23 @@ export async function getStaticQrDetails(context, qrId) {
   for (const payment of existingPayments) {
     await registerPaymentIncome(databases, document, payment, context);
   }
+  const todayPayments = await listQrPaymentsPage(databases, document.$id, {
+    page,
+    todayOnly: true,
+  });
+
   return {
     qr: toStaticQr(document),
-    payments: await listQrPayments(databases, document.$id),
+    payments: todayPayments.payments,
+    paymentsTotal: todayPayments.total,
+    paymentsPage: todayPayments.page,
+    paymentsPageSize: todayPayments.pageSize,
+    paymentsTotalPages: todayPayments.totalPages,
+    paymentsDate: todayPayments.date,
   };
 }
 
-export async function checkStaticQr(context, qrId) {
+export async function checkStaticQr(context, qrId, { page = 1 } = {}) {
   const { databases } = createAdminClient(context.userAgent);
   const document = await getStaticQrDocument(databases, qrId);
   await assertStaticQrAccess(context, document);
@@ -562,9 +730,18 @@ export async function checkStaticQr(context, qrId) {
       { allowExpired: true },
     );
     const persisted = await persistStatus(databases, document, status, context);
+    const todayPayments = await listQrPaymentsPage(databases, document.$id, {
+      page,
+      todayOnly: true,
+    });
     return {
       qr: toStaticQr(persisted.document),
-      payments: persisted.payments,
+      payments: todayPayments.payments,
+      paymentsTotal: todayPayments.total,
+      paymentsPage: todayPayments.page,
+      paymentsPageSize: todayPayments.pageSize,
+      paymentsTotalPages: todayPayments.totalPages,
+      paymentsDate: todayPayments.date,
       bankStatus: status,
     };
   } catch (error) {
