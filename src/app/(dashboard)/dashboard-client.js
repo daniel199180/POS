@@ -1951,6 +1951,7 @@ export default function DashboardClient({
                 branchId={selectedBranchId}
                 branchName={selectedBranch?.name || "Sucursal"}
                 paymentMethods={catalog.paymentMethods}
+                timeZone={timeZone}
               />
             ) : null}
             {enabledPosTabs.links && activePosTab === "links" ? (
@@ -1959,6 +1960,7 @@ export default function DashboardClient({
                 branchId={selectedBranchId}
                 branchName={selectedBranch?.name || "Sucursal"}
                 refreshKey={paymentLinksRefreshKey}
+                timeZone={timeZone}
                 onCancelled={(link) => {
                   loadProductsPage({ reset: true });
                   setLatestPaymentLink((current) =>

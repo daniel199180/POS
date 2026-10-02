@@ -27,12 +27,23 @@ function qrImageSrc(value = "") {
   return `data:image/png;base64,${value}`;
 }
 
-function date(value) {
-  return value ? new Date(value).toLocaleString("es-BO") : "—";
+function date(value, timeZone) {
+  return value
+    ? new Intl.DateTimeFormat("es-BO", {
+        timeZone,
+        dateStyle: "short",
+        timeStyle: "short",
+      }).format(new Date(value))
+    : "—";
 }
 
-function dateOnly(value) {
-  return value ? new Date(value).toLocaleDateString("es-BO") : "—";
+function dateOnly(value, timeZone) {
+  return value
+    ? new Intl.DateTimeFormat("es-BO", {
+        timeZone,
+        dateStyle: "short",
+      }).format(new Date(value))
+    : "—";
 }
 
 function filenamePart(value) {
@@ -51,6 +62,7 @@ export default function StaticPaymentQrClient({
   branchId,
   branchName,
   paymentMethods = [],
+  timeZone = "America/La_Paz",
 }) {
   const [description, setDescription] = useState("");
   const [qrs, setQrs] = useState([]);
@@ -358,7 +370,7 @@ export default function StaticPaymentQrClient({
                     {qr.description}
                   </h3>
                   <p className="text-xs text-neutral-500">
-                    Creado {date(qr.createdAt)}
+                    Creado {date(qr.createdAt, timeZone)}
                   </p>
                 </div>
                 <span className="inline-flex shrink-0 items-center gap-2 text-xs font-medium text-neutral-400">
@@ -435,7 +447,7 @@ export default function StaticPaymentQrClient({
                   <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3">
                     <p className="text-xs text-neutral-500">Última consulta</p>
                     <p className="mt-1 text-sm font-semibold">
-                      {date(selectedQr.lastCheckedAt)}
+                      {date(selectedQr.lastCheckedAt, timeZone)}
                     </p>
                   </div>
                 </div>
@@ -498,7 +510,7 @@ export default function StaticPaymentQrClient({
                           className="border-t border-neutral-800"
                         >
                           <td className="px-3 py-3 text-neutral-400">
-                            {date(payment.paidAt)}
+                            {date(payment.paidAt, timeZone)}
                           </td>
                           <td className="px-3 py-3 font-semibold text-emerald-300">
                             {money(payment.amount)}
@@ -531,7 +543,7 @@ export default function StaticPaymentQrClient({
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
                   <span>
                     {paymentsDate
-                      ? `Fecha: ${dateOnly(`${paymentsDate}T12:00:00-04:00`)}`
+                      ? `Fecha: ${dateOnly(`${paymentsDate}T12:00:00Z`, timeZone)}`
                       : "Pagos del día"}{" "}
                     · Página {paymentsPage} de {paymentsTotalPages}
                   </span>

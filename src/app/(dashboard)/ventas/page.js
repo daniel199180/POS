@@ -6,6 +6,7 @@ import {
   getSalesFilterOptions,
   listSales,
 } from "@/lib/pos/sales";
+import { getTimeZoneSettings } from "@/lib/pos/settings";
 
 export default async function SalesPage() {
   const context = await getCurrentUserContext();
@@ -14,7 +15,8 @@ export default async function SalesPage() {
     redirect("/");
   }
 
-  const today = getDefaultSalesDate();
+  const { timeZone } = await getTimeZoneSettings(context);
+  const today = getDefaultSalesDate(timeZone);
   const initialFilters = {
     dateFrom: today,
     dateTo: today,
@@ -38,6 +40,7 @@ export default async function SalesPage() {
       options={options}
       initialData={initialData}
       initialFilters={initialFilters}
+      timeZone={timeZone}
     />
   );
 }

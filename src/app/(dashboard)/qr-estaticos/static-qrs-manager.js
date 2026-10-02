@@ -11,12 +11,23 @@ import {
   X,
 } from "lucide-react";
 
-function date(value) {
-  return value ? new Date(value).toLocaleString("es-BO") : "—";
+function date(value, timeZone) {
+  return value
+    ? new Intl.DateTimeFormat("es-BO", {
+        timeZone,
+        dateStyle: "short",
+        timeStyle: "short",
+      }).format(new Date(value))
+    : "—";
 }
 
-function dateOnly(value) {
-  return value ? new Date(value).toLocaleDateString("es-BO") : "—";
+function dateOnly(value, timeZone) {
+  return value
+    ? new Intl.DateTimeFormat("es-BO", {
+        timeZone,
+        dateStyle: "short",
+      }).format(new Date(value))
+    : "—";
 }
 
 function money(value) {
@@ -60,6 +71,7 @@ export default function StaticQrsManager({
     page: 1,
     pageSize: 15,
   },
+  timeZone = "America/La_Paz",
 }) {
   const [filters, setFilters] = useState(initialFilters);
   const [qrs, setQrs] = useState(initialData.qrs || []);
@@ -415,7 +427,7 @@ export default function StaticQrsManager({
                   {qr.description}
                 </h2>
                 <p className="text-xs text-neutral-500">
-                  Creado {date(qr.createdAt)}
+                  Creado {date(qr.createdAt, timeZone)}
                 </p>
               </div>
               <span className="inline-flex shrink-0 items-center gap-2 text-xs font-medium text-neutral-400">
@@ -542,7 +554,7 @@ export default function StaticQrsManager({
               {staticPayments.map((payment) => (
                 <tr key={payment.id} className="border-t border-neutral-800">
                   <td className="px-3 py-3 text-neutral-400">
-                    {date(payment.paidAt)}
+                    {date(payment.paidAt, timeZone)}
                   </td>
                   <td className="px-3 py-3 font-semibold text-neutral-100">
                     {payment.staticQrDescription}
@@ -682,7 +694,7 @@ export default function StaticQrsManager({
                         className="border-t border-neutral-800"
                       >
                         <td className="px-3 py-3 text-neutral-400">
-                          {date(payment.paidAt)}
+                          {date(payment.paidAt, timeZone)}
                         </td>
                         <td className="px-3 py-3 font-semibold text-emerald-300">
                           {money(payment.amount)}
@@ -714,7 +726,7 @@ export default function StaticQrsManager({
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
                 <span>
                   {detailPaymentsDate
-                    ? `Fecha: ${dateOnly(`${detailPaymentsDate}T12:00:00-04:00`)}`
+                    ? `Fecha: ${dateOnly(`${detailPaymentsDate}T12:00:00Z`, timeZone)}`
                     : "Pagos del día"}{" "}
                   · Página {detailPaymentsPage} de {detailPaymentsTotalPages}
                 </span>

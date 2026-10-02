@@ -1,4 +1,5 @@
 import { localReportDate, shiftReportDate } from "./report-dates.js";
+import { DEFAULT_TIME_ZONE, localHour } from "./time-zone.js";
 import { saleChannel } from "./sale-origin.js";
 
 const categoryKeys = ["products", "monthly", "custom", "unclassified"];
@@ -122,6 +123,7 @@ export function buildSalesAnalytics({
   items,
   range,
   branches = [],
+  timeZone = DEFAULT_TIME_ZONE,
 }) {
   const itemsBySale = new Map();
   for (const item of items) {
@@ -181,7 +183,7 @@ export function buildSalesAnalytics({
     const allocations = allocateSaleIncome(sale, saleItems);
     addSale(summary, sale, allocations);
     addSale(branch, sale, allocations);
-    const day = daily.get(localReportDate(sale.completedAt));
+    const day = daily.get(localReportDate(sale.completedAt, timeZone));
     if (day) addSale(day, sale, allocations);
     if (!byCashier.has(sale.cashierId))
       byCashier.set(
@@ -192,9 +194,7 @@ export function buildSalesAnalytics({
         }),
       );
     addSale(byCashier.get(sale.cashierId), sale, allocations);
-    const hour = new Date(
-      Date.parse(sale.completedAt) - 4 * 3600000,
-    ).getUTCHours();
+    const hour = localHour(sale.completedAt, timeZone);
     hourly[hour].total += cents(sale.total);
     hourly[hour].count++;
     for (const allocation of allocations) {

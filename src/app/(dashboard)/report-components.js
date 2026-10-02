@@ -19,9 +19,9 @@ export const number = (value) =>
   );
 export const dateLabel = (value) =>
   value?.split("-").reverse().join("/") || "—";
-export const dateTime = (value) =>
+export const dateTime = (value, timeZone = "America/La_Paz") =>
   new Intl.DateTimeFormat("es-BO", {
-    timeZone: "America/La_Paz",
+    timeZone,
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));

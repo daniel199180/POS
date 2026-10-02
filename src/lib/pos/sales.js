@@ -17,6 +17,8 @@ import {
   assertPosSaleTabsEnabled,
   assertPosTabEnabled,
 } from "./pos-ui-settings.js";
+import { getTimeZoneSettings } from "./settings.js";
+import { DEFAULT_TIME_ZONE, localDate, localDateRange } from "./time-zone.js";
 
 const { databaseId, collections } = appwriteConfig;
 const documentPermissions = [];
@@ -25,7 +27,6 @@ const saleStatuses = new Set(["completed", "cancelled", "refunded"]);
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
 const SUMMARY_LIMIT = 2000;
-const LA_PAZ_OFFSET = "-04:00";
 const CUSTOM_PRODUCT_SKU = "CUSTOM";
 const INSTITUTE_PAYMENT_SKU = "MENSUALIDAD";
 const CUSTOM_PRODUCT_ID_PREFIX = "custom-";
@@ -149,24 +150,16 @@ export function createSaleContextFromBanecoQrToken(input, userAgent) {
   };
 }
 
-function formatLocalDate(date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/La_Paz",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+function formatLocalDate(date = new Date(), timeZone = DEFAULT_TIME_ZONE) {
+  return localDate(date, timeZone);
 }
 
-function getDateRange(dateFrom, dateTo) {
-  const safeFrom = text(dateFrom) || formatLocalDate();
+function getDateRange(dateFrom, dateTo, timeZone = DEFAULT_TIME_ZONE) {
+  const safeFrom = text(dateFrom) || formatLocalDate(new Date(), timeZone);
   const safeTo = text(dateTo) || safeFrom;
 
   return {
-    dateFrom: safeFrom,
-    dateTo: safeTo,
-    from: new Date(`${safeFrom}T00:00:00${LA_PAZ_OFFSET}`).toISOString(),
-    to: new Date(`${safeTo}T23:59:59.999${LA_PAZ_OFFSET}`).toISOString(),
+    ...localDateRange(safeFrom, safeTo, timeZone),
   };
 }
 
@@ -352,12 +345,16 @@ function allowedBranchFilter(context, requestedBranchId) {
   return context.allowedBranchIds || [];
 }
 
-function buildSalesQueries(context, filters = {}, { paginate = true } = {}) {
+function buildSalesQueries(
+  context,
+  filters = {},
+  { paginate = true, timeZone = DEFAULT_TIME_ZONE } = {},
+) {
   const pageSize = clampPageSize(filters.pageSize);
   const page = Math.max(Math.trunc(number(filters.page, 1)), 1);
   const offset = (page - 1) * pageSize;
   const queries = [];
-  const dateRange = getDateRange(filters.dateFrom, filters.dateTo);
+  const dateRange = getDateRange(filters.dateFrom, filters.dateTo, timeZone);
   const branchFilter = allowedBranchFilter(context, filters.branchId);
   const paymentType = text(filters.paymentType);
   const paymentMethodId = text(filters.paymentMethodId);
@@ -593,8 +590,11 @@ async function assertQrHasNotBeenUsed(databases, branchId, qrId) {
   }
 }
 
-async function fetchSummarySales(databases, context, filters) {
-  const { queries } = buildSalesQueries(context, filters, { paginate: false });
+async function fetchSummarySales(databases, context, filters, timeZone) {
+  const { queries } = buildSalesQueries(context, filters, {
+    paginate: false,
+    timeZone,
+  });
   const documents = [];
   let offset = 0;
 
@@ -623,8 +623,8 @@ async function fetchSummarySales(databases, context, filters) {
     .filter((sale) => matchesSaleSearch(sale, filters.search));
 }
 
-export function getDefaultSalesDate() {
-  return formatLocalDate();
+export function getDefaultSalesDate(timeZone = DEFAULT_TIME_ZONE) {
+  return formatLocalDate(new Date(), timeZone);
 }
 
 export async function getSalesFilterOptions(context) {
@@ -675,9 +675,11 @@ export async function getSalesFilterOptions(context) {
 
 export async function listSales(context, filters = {}) {
   const { databases } = createAdminClient(context.userAgent);
+  const { timeZone } = await getTimeZoneSettings(context);
   const search = text(filters.search);
   const queryFilters = buildSalesQueries(context, filters, {
     paginate: !search,
+    timeZone,
   });
   const queries = search
     ? [...queryFilters.queries, Query.limit(500)]
@@ -700,10 +702,12 @@ export async function listSales(context, filters = {}) {
     databases,
     paginatedSales.map((sale) => sale.id),
   );
-  const summarySales = await fetchSummarySales(databases, context, {
-    ...filters,
-    search,
-  });
+  const summarySales = await fetchSummarySales(
+    databases,
+    context,
+    { ...filters, search },
+    timeZone,
+  );
 
   return {
     sales: paginatedSales.map((sale) => ({
@@ -731,7 +735,8 @@ export async function getDailyIncomeReport(context, filters = {}) {
     throw new ForbiddenError("No tienes acceso a esta sucursal.");
   }
 
-  const reportDate = formatLocalDate();
+  const { timeZone } = await getTimeZoneSettings(context);
+  const reportDate = formatLocalDate(new Date(), timeZone);
   const { databases } = createAdminClient(context.userAgent);
   await assertPosTabEnabled(context, branchId, "daily", databases);
   const branchDocument = await databases.getDocument({
@@ -748,7 +753,7 @@ export async function getDailyIncomeReport(context, filters = {}) {
       cashierId: context.user.id,
       status: "completed",
     },
-    { paginate: false },
+    { paginate: false, timeZone },
   );
   const documents = [];
   let offset = 0;
@@ -788,6 +793,7 @@ export async function getDailyIncomeReport(context, filters = {}) {
 
   return {
     date: reportDate,
+    timeZone,
     generatedAt: new Date().toISOString(),
     branch: toBranch(branchDocument),
     cashier: {

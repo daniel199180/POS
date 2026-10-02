@@ -5,10 +5,12 @@ import { getAdminReportOptions, readReportDocuments } from "./report-data.js";
 import { assertCanViewAnalytics } from "./auth-core.js";
 import { parseReportRange } from "./report-dates.js";
 import { buildSalesAnalytics } from "./analytics-core.js";
+import { getTimeZoneSettings } from "./settings.js";
 
 export async function getSalesAnalytics(context, filters = {}) {
   assertCanViewAnalytics(context);
-  const range = parseReportRange(filters);
+  const { timeZone } = await getTimeZoneSettings(context);
+  const range = parseReportRange(filters, timeZone);
   const { databases } = createAdminClient(context.userAgent);
   const { collections } = appwriteConfig;
   const common = [Query.orderAsc("$id")];
@@ -23,14 +25,8 @@ export async function getSalesAnalytics(context, filters = {}) {
     ]),
     readReportDocuments(databases, collections.sales, [
       ...common,
-      Query.greaterThanEqual(
-        "completedAt",
-        `${range.previousFrom}T00:00:00-04:00`,
-      ),
-      Query.lessThanEqual(
-        "completedAt",
-        `${range.previousTo}T23:59:59.999-04:00`,
-      ),
+      Query.greaterThanEqual("completedAt", range.previousRangeFrom),
+      Query.lessThanEqual("completedAt", range.previousRangeTo),
     ]),
     getAdminReportOptions(context),
   ]);
@@ -52,6 +48,7 @@ export async function getSalesAnalytics(context, filters = {}) {
       previousSales,
       items,
       range,
+      timeZone,
       branches: options.branches.filter(
         (branch) => !filters.branchId || branch.id === filters.branchId,
       ),

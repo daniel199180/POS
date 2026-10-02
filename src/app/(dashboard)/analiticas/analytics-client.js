@@ -31,7 +31,11 @@ function Change({ value }) {
   );
 }
 
-export default function AnalyticsClient({ options, initialFilters }) {
+export default function AnalyticsClient({
+  options,
+  initialFilters,
+  timeZone = "America/La_Paz",
+}) {
   const [draft, setDraft] = useState(initialFilters);
   const [filters, setFilters] = useState(initialFilters);
   const { data, loading, error, refresh } = useAdminReport(
@@ -41,7 +45,7 @@ export default function AnalyticsClient({ options, initialFilters }) {
   const setField = (key, value) =>
     setDraft((current) => ({ ...current, [key]: value }));
   function preset(value) {
-    const today = localReportDate();
+    const today = localReportDate(new Date(), timeZone);
     const dateFrom =
       value === "month"
         ? `${today.slice(0, 7)}-01`
@@ -176,7 +180,8 @@ export default function AnalyticsClient({ options, initialFilters }) {
               {dateLabel(data.range.previousTo)}
             </span>
             <span>
-              Actualizado: {dateTime(data.generatedAt)} · Hora de Bolivia
+              Actualizado: {dateTime(data.generatedAt, timeZone)} · Hora
+              configurada
             </span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

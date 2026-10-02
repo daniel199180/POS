@@ -5,10 +5,12 @@ import {
   listStaticQrPayments,
   listStaticQrs,
 } from "@/lib/pos/static-qrs";
+import { getTimeZoneSettings } from "@/lib/pos/settings";
 import StaticQrsManager from "./static-qrs-manager";
 
 export default async function StaticQrsPage() {
   const context = await getCurrentUserContext();
+  const { timeZone } = await getTimeZoneSettings(context);
   const initialFilters = {
     branchId: "",
     createdByUserId: "",
@@ -40,6 +42,7 @@ export default async function StaticQrsPage() {
       qrOptions={filterOptions.qrs}
       initialPaymentData={initialPaymentData}
       initialPaymentFilters={initialPaymentFilters}
+      timeZone={timeZone}
     />
   );
 }

@@ -125,8 +125,8 @@ test("static QR tab uses the active branch and exposes payment history", () => {
     "utf8",
   );
   assert.match(staticQrSource, /Consultar pagos/);
-  assert.match(staticQrSource, /Deshabilitar/);
-  assert.match(staticQrSource, /method: "DELETE"/);
+  assert.match(staticQrSource, /Archivar/);
+  assert.match(staticQrSource, /action: "archive"/);
   assert.match(staticQrSource, /paymentsPage/);
   assert.match(staticQrSource, /Pagos del día/);
   const staticQrServerSource = readFileSync(

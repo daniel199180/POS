@@ -74,7 +74,11 @@ function displayValue(value, field, options) {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
-export default function HistoryClient({ options, initialFilters }) {
+export default function HistoryClient({
+  options,
+  initialFilters,
+  timeZone = "America/La_Paz",
+}) {
   const [draft, setDraft] = useState(initialFilters);
   const [filters, setFilters] = useState(initialFilters);
   const { data, loading, error, refresh } = useAdminReport(
@@ -261,7 +265,7 @@ export default function HistoryClient({ options, initialFilters }) {
                       </span>
                       <span className="text-right text-xs">
                         <span className="block text-neutral-400">
-                          {dateTime(event.createdAt)}
+                          {dateTime(event.createdAt, timeZone)}
                         </span>
                         <span
                           className={`mt-1 block ${event.status === "completed" ? "text-emerald-300" : event.status === "pending" ? "text-amber-300" : "text-red-300"}`}

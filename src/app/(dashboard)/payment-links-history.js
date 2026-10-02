@@ -20,8 +20,14 @@ const labels = {
   cancelled: "Cancelado",
   failed: "Con error",
 };
-function date(value) {
-  return value ? new Date(value).toLocaleString("es-BO") : "—";
+function date(value, timeZone) {
+  return value
+    ? new Intl.DateTimeFormat("es-BO", {
+        timeZone,
+        dateStyle: "short",
+        timeStyle: "short",
+      }).format(new Date(value))
+    : "—";
 }
 function money(value) {
   return new Intl.NumberFormat("es-BO", {
@@ -42,6 +48,7 @@ export default function PaymentLinksHistory({
   onNext,
   onPrevious,
   onClose,
+  timeZone = "America/La_Paz",
 }) {
   const dialog = useRef(null);
   useEffect(() => {
@@ -158,14 +165,14 @@ export default function PaymentLinksHistory({
                       </a>
                     </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap text-neutral-400">
-                      {date(link.createdAt)}
+                      {date(link.createdAt, timeZone)}
                     </td>
                     <td className="px-4 py-3 font-semibold whitespace-nowrap">
                       {money(link.total)}
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${status === "paid" ? "border-emerald-800 bg-emerald-950 text-emerald-300" : status === "expired" ? "border-red-800 bg-red-950 text-red-300" : status === "cancelled" ? "border-neutral-700 bg-neutral-900 text-neutral-400" : "border-amber-800 bg-amber-950 text-amber-300"}`}
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-xs whitespace-nowrap ${status === "paid" ? "border-emerald-800 bg-emerald-950 text-emerald-300" : status === "expired" ? "border-red-800 bg-red-950 text-red-300" : status === "cancelled" ? "border-neutral-700 bg-neutral-900 text-neutral-400" : "border-amber-800 bg-amber-950 text-amber-300"}`}
                       >
                         {labels[status] || status}
                       </span>

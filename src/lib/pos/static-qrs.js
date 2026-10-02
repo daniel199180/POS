@@ -4,6 +4,12 @@ import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { assertPosTabEnabled } from "./pos-ui-settings.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
+import { getTimeZoneSettings } from "./settings.js";
+import {
+  DEFAULT_TIME_ZONE,
+  localDate,
+  localDateTimeToIso,
+} from "./time-zone.js";
 import {
   cancelPosBanecoQr,
   checkPosBanecoQrStatus,
@@ -137,7 +143,7 @@ function providerAmount(payment, fallback = 0) {
   );
 }
 
-function providerDate(payment, fallback) {
+function providerDate(payment, fallback, timeZone = DEFAULT_TIME_ZONE) {
   const value = providerValue(payment, [
     "paidAt",
     "paymentDate",
@@ -146,12 +152,36 @@ function providerDate(payment, fallback) {
     "fecha",
     "createdAt",
   ]);
-  return value && !Number.isNaN(Date.parse(value))
+  const paymentTime = providerValue(payment, [
+    "paymentTime",
+    "transactionTime",
+    "time",
+    "hora",
+  ]);
+
+  if (!value) {
+    return fallback;
+  }
+
+  const dateOnly = value.match(/^(\d{4}-\d{2}-\d{2})(?:T00:00:00)?$/);
+  const timeOnly = paymentTime.match(/^(\d{2}:\d{2}(?::\d{2})?)/)?.[1];
+  if (dateOnly) {
+    return (
+      localDateTimeToIso(dateOnly[1], timeOnly || "00:00:00", timeZone) ||
+      fallback
+    );
+  }
+
+  return !Number.isNaN(Date.parse(value))
     ? new Date(value).toISOString()
     : fallback;
 }
 
-function normalizeProviderPayment(payment, status) {
+function normalizeProviderPayment(
+  payment,
+  status,
+  timeZone = DEFAULT_TIME_ZONE,
+) {
   const serialized = JSON.stringify(payment || {});
   const explicitId = providerValue(payment, [
     "paymentId",
@@ -171,7 +201,7 @@ function normalizeProviderPayment(payment, status) {
     providerPaymentId: providerPaymentId.slice(0, 160),
     amount: providerAmount(payment, status.confirmedAmount),
     currency: providerValue(payment, ["currency", "moneda"]) || "BOB",
-    paidAt: providerDate(payment, status.checkedAt),
+    paidAt: providerDate(payment, status.checkedAt, timeZone),
     senderName: providerValue(payment, ["senderName", "payerName", "name"]),
     senderDocumentId: providerValue(payment, [
       "senderDocumentId",
@@ -190,32 +220,27 @@ function normalizeProviderPayment(payment, status) {
   };
 }
 
-function getTodayRange() {
-  const date = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/La_Paz",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+function getTodayRange(timeZone = DEFAULT_TIME_ZONE) {
+  const date = localDate(new Date(), timeZone);
 
   return {
     date,
-    from: new Date(`${date}T00:00:00-04:00`).toISOString(),
-    to: new Date(`${date}T23:59:59.999-04:00`).toISOString(),
+    from: localDateTimeToIso(date, "00:00:00", timeZone),
+    to: localDateTimeToIso(date, "23:59:59.999", timeZone),
   };
 }
 
 async function listQrPaymentsPage(
   databases,
   staticQrId,
-  { page = 1, todayOnly = false } = {},
+  { page = 1, todayOnly = false, timeZone = DEFAULT_TIME_ZONE } = {},
 ) {
   const safePage = Math.max(Number.parseInt(page, 10) || 1, 1);
   const queries = [Query.equal("staticQrId", staticQrId)];
   let date = "";
 
   if (todayOnly) {
-    const today = getTodayRange();
+    const today = getTodayRange(timeZone);
     date = today.date;
     queries.push(
       Query.greaterThanEqual("paidAt", today.from),
@@ -340,7 +365,13 @@ async function registerPaymentIncome(
   return saleId;
 }
 
-async function persistStatus(databases, document, status, context) {
+async function persistStatus(
+  databases,
+  document,
+  status,
+  context,
+  timeZone = DEFAULT_TIME_ZONE,
+) {
   const rawPayments = Array.isArray(status.payment) ? status.payment : [];
   const existing = await listQrPayments(databases, document.$id);
   const existingIds = new Set(
@@ -348,7 +379,7 @@ async function persistStatus(databases, document, status, context) {
   );
 
   for (const [index, rawPayment] of rawPayments.entries()) {
-    const payment = normalizeProviderPayment(rawPayment, status);
+    const payment = normalizeProviderPayment(rawPayment, status, timeZone);
     if (payment.amount <= 0 || existingIds.has(payment.providerPaymentId))
       continue;
 
@@ -687,6 +718,7 @@ export async function listStaticQrPayments(context, input = {}) {
 
 export async function getStaticQrDetails(context, qrId, { page = 1 } = {}) {
   const { databases } = createAdminClient(context.userAgent);
+  const { timeZone } = await getTimeZoneSettings(context);
   const document = await getStaticQrDocument(databases, qrId);
   await assertStaticQrAccess(context, document);
   const existingPayments = await listQrPayments(databases, document.$id);
@@ -696,6 +728,7 @@ export async function getStaticQrDetails(context, qrId, { page = 1 } = {}) {
   const todayPayments = await listQrPaymentsPage(databases, document.$id, {
     page,
     todayOnly: true,
+    timeZone,
   });
 
   return {
@@ -711,6 +744,7 @@ export async function getStaticQrDetails(context, qrId, { page = 1 } = {}) {
 
 export async function checkStaticQr(context, qrId, { page = 1 } = {}) {
   const { databases } = createAdminClient(context.userAgent);
+  const { timeZone } = await getTimeZoneSettings(context);
   const document = await getStaticQrDocument(databases, qrId);
   await assertStaticQrAccess(context, document);
 
@@ -729,10 +763,17 @@ export async function checkStaticQr(context, qrId, { page = 1 } = {}) {
       },
       { allowExpired: true },
     );
-    const persisted = await persistStatus(databases, document, status, context);
+    const persisted = await persistStatus(
+      databases,
+      document,
+      status,
+      context,
+      timeZone,
+    );
     const todayPayments = await listQrPaymentsPage(databases, document.$id, {
       page,
       todayOnly: true,
+      timeZone,
     });
     return {
       qr: toStaticQr(persisted.document),

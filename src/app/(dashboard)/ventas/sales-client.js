@@ -39,12 +39,13 @@ function money(value) {
   }).format(value || 0);
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, timeZone = "America/La_Paz") {
   if (!value) {
     return "-";
   }
 
   return new Intl.DateTimeFormat("es-BO", {
+    timeZone,
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
@@ -75,6 +76,7 @@ export default function SalesClient({
   options,
   initialData,
   initialFilters,
+  timeZone = "America/La_Paz",
 }) {
   const [filters, setFilters] = useState(initialFilters);
   const [sales, setSales] = useState(initialData.sales);
@@ -458,7 +460,7 @@ export default function SalesClient({
                     {sale.saleNumber}
                   </span>
                   <span className="text-neutral-300">
-                    {formatDateTime(sale.completedAt)}
+                    {formatDateTime(sale.completedAt, timeZone)}
                   </span>
                   <span className="truncate text-neutral-300">
                     {sale.branchName}
@@ -563,7 +565,7 @@ export default function SalesClient({
                   {selectedSale.saleNumber}
                 </h2>
                 <p className="mt-1 text-sm text-neutral-500">
-                  {formatDateTime(selectedSale.completedAt)}
+                  {formatDateTime(selectedSale.completedAt, timeZone)}
                 </p>
               </div>
               <button

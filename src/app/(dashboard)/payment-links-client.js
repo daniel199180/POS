@@ -44,6 +44,7 @@ export default function PaymentLinksClient({
   showHistoryButton = false,
   branchOptions = [],
   isAdmin = false,
+  timeZone = "America/La_Paz",
 }) {
   const [selectedBranchId, setSelectedBranchId] = useState(branchId);
   const [links, setLinks] = useState([]);
@@ -75,7 +76,11 @@ export default function PaymentLinksClient({
   const fetchPage = useCallback(
     async (cursor = "", filter = "all") => {
       if (!selectedBranchId) return;
-      const params = new URLSearchParams({ branchId: selectedBranchId, limit: "50", filter });
+      const params = new URLSearchParams({
+        branchId: selectedBranchId,
+        limit: "50",
+        filter,
+      });
       if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/pos/payment-links?${params}`, {
         cache: "no-store",
@@ -92,24 +97,28 @@ export default function PaymentLinksClient({
     [selectedBranchId],
   );
 
-  const loadLinks = useCallback(async (page = 1, cursor = "", filter = activeFilter) => {
-    const sequence = ++requestSequence.current;
-    setIsLoading(true);
-    setError("");
-    try {
-      const payload = await fetchPage(cursor, filter);
-      if (sequence !== requestSequence.current) return;
-      setLinks(payload.links || []);
-      setSummary(payload.summary || { ready: 0, expired: 0, cancelled: 0 });
-      setTotalLinks(payload.total || 0);
-      setMainPage(page);
-      setMainNextCursor(payload.nextCursor || "");
-    } catch (requestError) {
-      if (sequence === requestSequence.current) setError(requestError.message);
-    } finally {
-      if (sequence === requestSequence.current) setIsLoading(false);
-    }
-  }, [activeFilter, fetchPage]);
+  const loadLinks = useCallback(
+    async (page = 1, cursor = "", filter = activeFilter) => {
+      const sequence = ++requestSequence.current;
+      setIsLoading(true);
+      setError("");
+      try {
+        const payload = await fetchPage(cursor, filter);
+        if (sequence !== requestSequence.current) return;
+        setLinks(payload.links || []);
+        setSummary(payload.summary || { ready: 0, expired: 0, cancelled: 0 });
+        setTotalLinks(payload.total || 0);
+        setMainPage(page);
+        setMainNextCursor(payload.nextCursor || "");
+      } catch (requestError) {
+        if (sequence === requestSequence.current)
+          setError(requestError.message);
+      } finally {
+        if (sequence === requestSequence.current) setIsLoading(false);
+      }
+    },
+    [activeFilter, fetchPage],
+  );
 
   const loadHistoryPage = useCallback(
     async (page, cursor = "") => {
@@ -270,7 +279,10 @@ export default function PaymentLinksClient({
               </select>
             </label>
           ) : null}
-          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto" aria-live="polite">
+          <div
+            className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+            aria-live="polite"
+          >
             {[
               ["all", "Todos", totalLinks],
               ["ready", "Listos para pagar", summary.ready],
@@ -290,7 +302,11 @@ export default function PaymentLinksClient({
           </div>
           <div className="flex items-center gap-2">
             {showHistoryButton ? (
-              <button type="button" onClick={openHistory} className="rounded-md border border-neutral-700 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800">
+              <button
+                type="button"
+                onClick={openHistory}
+                className="rounded-md border border-neutral-700 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800"
+              >
                 Historial
               </button>
             ) : null}
@@ -323,41 +339,108 @@ export default function PaymentLinksClient({
           {links.length ? (
             <table className="w-full min-w-[760px] text-left text-sm">
               <caption className="sr-only">Enlaces de pago recientes</caption>
-              <thead className="sticky top-0 z-10 bg-neutral-900 text-[11px] uppercase tracking-wide text-neutral-500">
+              <thead className="sticky top-0 z-10 bg-neutral-900 text-[11px] tracking-wide text-neutral-500 uppercase">
                 <tr>
-                  {["Acciones", "Creación", "Monto", "Estado", "Detalle"].map((heading) => (
-                    <th key={heading} scope="col" className="px-4 py-2 font-medium">{heading}</th>
-                  ))}
+                  {["Acciones", "Creación", "Monto", "Estado", "Detalle"].map(
+                    (heading) => (
+                      <th
+                        key={heading}
+                        scope="col"
+                        className="px-4 py-2 font-medium"
+                      >
+                        {heading}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {links.map((link) => {
                   const displayStatus = paymentLinkDisplayStatus(link);
-                  const canCancel = !["paid", "cancelled", "expired"].includes(link.status);
+                  const canCancel = !["paid", "cancelled", "expired"].includes(
+                    link.status,
+                  );
                   return (
-                    <tr key={link.id} className="border-t border-neutral-800 align-middle hover:bg-neutral-900/60">
+                    <tr
+                      key={link.id}
+                      className="border-t border-neutral-800 align-middle hover:bg-neutral-900/60"
+                    >
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => copyLink(link)} className="grid size-7 place-items-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white" aria-label="Copiar enlace">
-                            {copiedId === link.id ? <Check className="size-3.5" /> : <Clipboard className="size-3.5" />}
+                          <button
+                            type="button"
+                            onClick={() => copyLink(link)}
+                            className="grid size-7 place-items-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                            aria-label="Copiar enlace"
+                          >
+                            {copiedId === link.id ? (
+                              <Check className="size-3.5" />
+                            ) : (
+                              <Clipboard className="size-3.5" />
+                            )}
                           </button>
-                          <a href={link.sharePath} target="_blank" rel="noreferrer" className="grid size-7 place-items-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white" aria-label="Abrir enlace"><ExternalLink className="size-3.5" /></a>
-                          {canCancel ? <button type="button" onClick={() => cancelLink(link)} disabled={cancellingId === link.id} className="grid size-7 place-items-center rounded text-neutral-500 hover:bg-red-950 hover:text-red-300 disabled:opacity-50" aria-label="Cancelar enlace">{cancellingId === link.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</button> : null}
+                          <a
+                            href={link.sharePath}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="grid size-7 place-items-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                            aria-label="Abrir enlace"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                          {canCancel ? (
+                            <button
+                              type="button"
+                              onClick={() => cancelLink(link)}
+                              disabled={cancellingId === link.id}
+                              className="grid size-7 place-items-center rounded text-neutral-500 hover:bg-red-950 hover:text-red-300 disabled:opacity-50"
+                              aria-label="Cancelar enlace"
+                            >
+                              {cancellingId === link.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="size-3.5" />
+                              )}
+                            </button>
+                          ) : null}
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2 text-xs text-neutral-500">
-                        <div className="flex items-center gap-1"><CalendarClock className="size-3" />{new Date(link.createdAt).toLocaleDateString("es-BO")}</div>
-                        <div className="pl-4 text-[10px] text-neutral-600">{new Date(link.createdAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}</div>
+                      <td className="px-4 py-2 text-xs whitespace-nowrap text-neutral-500">
+                        <div className="flex items-center gap-1">
+                          <CalendarClock className="size-3" />
+                          {new Intl.DateTimeFormat("es-BO", {
+                            timeZone,
+                          }).format(new Date(link.createdAt))}
+                        </div>
+                        <div className="pl-4 text-[10px] text-neutral-600">
+                          {new Intl.DateTimeFormat("es-BO", {
+                            timeZone,
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }).format(new Date(link.createdAt))}
+                        </div>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2 font-semibold">{money(link.total)}</td>
+                      <td className="px-4 py-2 font-semibold whitespace-nowrap">
+                        {money(link.total)}
+                      </td>
                       <td className="px-4 py-2">
-                        <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${displayStatus === "paid" ? "border-emerald-800 bg-emerald-950 text-emerald-300" : displayStatus === "expired" ? "border-red-800 bg-red-950 text-red-300" : displayStatus === "cancelled" ? "border-neutral-700 bg-neutral-900 text-neutral-400" : "border-amber-800 bg-amber-950 text-amber-300"}`}>
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-xs whitespace-nowrap ${displayStatus === "paid" ? "border-emerald-800 bg-emerald-950 text-emerald-300" : displayStatus === "expired" ? "border-red-800 bg-red-950 text-red-300" : displayStatus === "cancelled" ? "border-neutral-700 bg-neutral-900 text-neutral-400" : "border-amber-800 bg-amber-950 text-amber-300"}`}
+                        >
                           {statusLabel[displayStatus] || displayStatus}
                         </span>
                       </td>
                       <td className="max-w-[300px] px-4 py-2 text-xs text-neutral-300">
-                        <p className="truncate">{link.items.map((item) => `${item.quantity}× ${item.name}`).join(" · ")}</p>
-                        {link.notes ? <p className="truncate text-neutral-500">{link.notes}</p> : null}
+                        <p className="truncate">
+                          {link.items
+                            .map((item) => `${item.quantity}× ${item.name}`)
+                            .join(" · ")}
+                        </p>
+                        {link.notes ? (
+                          <p className="truncate text-neutral-500">
+                            {link.notes}
+                          </p>
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -367,11 +450,29 @@ export default function PaymentLinksClient({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center justify-between border-t border-neutral-800 px-4 py-2 text-xs text-neutral-500">
-          <span>{links.length ? `${(mainPage - 1) * 50 + 1}–${(mainPage - 1) * 50 + links.length} de ${totalLinks}` : "0 enlaces"}</span>
+          <span>
+            {links.length
+              ? `${(mainPage - 1) * 50 + 1}–${(mainPage - 1) * 50 + links.length} de ${totalLinks}`
+              : "0 enlaces"}
+          </span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={previousMainPage} disabled={mainPage === 1 || isLoading} className="rounded border border-neutral-800 px-2 py-1 disabled:opacity-30">Anterior</button>
+            <button
+              type="button"
+              onClick={previousMainPage}
+              disabled={mainPage === 1 || isLoading}
+              className="rounded border border-neutral-800 px-2 py-1 disabled:opacity-30"
+            >
+              Anterior
+            </button>
             <span>Página {mainPage}</span>
-            <button type="button" onClick={nextMainPage} disabled={!mainNextCursor || isLoading} className="rounded border border-neutral-800 px-2 py-1 disabled:opacity-30">Siguiente</button>
+            <button
+              type="button"
+              onClick={nextMainPage}
+              disabled={!mainNextCursor || isLoading}
+              className="rounded border border-neutral-800 px-2 py-1 disabled:opacity-30"
+            >
+              Siguiente
+            </button>
           </div>
         </div>
       </div>
@@ -393,6 +494,7 @@ export default function PaymentLinksClient({
           onNext={nextHistoryPage}
           onPrevious={previousHistoryPage}
           onClose={() => setIsHistoryOpen(false)}
+          timeZone={timeZone}
         />
       ) : null}
     </div>

@@ -93,13 +93,13 @@ function formatReportDate(value = "") {
   return `${day}/${month}/${year}`;
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, timeZone = "America/La_Paz") {
   if (!value) {
     return "-";
   }
 
   return new Intl.DateTimeFormat("es-BO", {
-    timeZone: "America/La_Paz",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -109,13 +109,13 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
-function formatTime(value) {
+function formatTime(value, timeZone = "America/La_Paz") {
   if (!value) {
     return "-";
   }
 
   return new Intl.DateTimeFormat("es-BO", {
-    timeZone: "America/La_Paz",
+    timeZone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -201,17 +201,17 @@ function saleItemSummary(items) {
 
 function getEntryDetailLines(entry) {
   const origin = getSaleOrigin(entry.sale, entry.items).label;
-  const detailLines = wrapText(`${origin} | ${saleItemSummary(entry.items)}`, 47);
+  const detailLines = wrapText(
+    `${origin} | ${saleItemSummary(entry.items)}`,
+    47,
+  );
   const notes = cleanText(entry.sale?.notes);
 
   if (!notes) {
     return detailLines;
   }
 
-  return [
-    ...detailLines,
-    ...wrapText(`Nota: ${notes}`, 47).slice(0, 2),
-  ];
+  return [...detailLines, ...wrapText(`Nota: ${notes}`, 47).slice(0, 2)];
 }
 
 function getEntryRowHeight(detailLines) {
@@ -234,7 +234,7 @@ function addSectionRow(lines, row, rowTop) {
   return rowBottom;
 }
 
-function addEntryRow(lines, row, rowTop) {
+function addEntryRow(lines, row, rowTop, timeZone) {
   const { sale, detailLines, rowHeight, index, total } = row;
   const rowBottom = rowTop - rowHeight;
   const textTop = rowTop - 13;
@@ -245,7 +245,7 @@ function addEntryRow(lines, row, rowTop) {
 
   addLine(lines, MARGIN_X, rowBottom, 570, rowBottom);
   addText(lines, 46, textTop, truncateText(sale.saleNumber, 13), 8);
-  addText(lines, 120, textTop, formatTime(sale.completedAt), 8);
+  addText(lines, 120, textTop, formatTime(sale.completedAt, timeZone), 8);
   addText(lines, 159, textTop, truncateText(getPaymentLabel(sale), 10), 8);
   detailLines.forEach((line, lineIndex) => {
     addText(lines, 220, textTop - lineIndex * PRODUCT_LINE_HEIGHT, line, 7);
@@ -400,7 +400,7 @@ function buildPageContent(report, pageRows, pageIndex, pageCount) {
     lines,
     390,
     731,
-    `Generado: ${formatDateTime(report.generatedAt)}`,
+    `Generado: ${formatDateTime(report.generatedAt, report.timeZone)}`,
     8,
   );
 
@@ -497,7 +497,7 @@ function buildPageContent(report, pageRows, pageIndex, pageCount) {
       rowTop =
         row.kind === "section"
           ? addSectionRow(lines, row, rowTop)
-          : addEntryRow(lines, row, rowTop);
+          : addEntryRow(lines, row, rowTop, report.timeZone);
     });
   }
 

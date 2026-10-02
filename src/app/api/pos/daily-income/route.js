@@ -13,6 +13,7 @@ export async function GET(request) {
     return NextResponse.json({
       report: {
         date: report.date,
+        timeZone: report.timeZone,
         generatedAt: report.generatedAt,
         branch: report.branch,
         cashier: report.cashier,

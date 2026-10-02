@@ -3,10 +3,12 @@ import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
 import { assertReportAdmin } from "./report-data.js";
 import { parseReportRange, reportInputError } from "./report-dates.js";
+import { getTimeZoneSettings } from "./settings.js";
 
 export async function listAuditHistory(context, filters = {}) {
   assertReportAdmin(context);
-  const range = parseReportRange(filters);
+  const { timeZone } = await getTimeZoneSettings(context);
+  const range = parseReportRange(filters, timeZone);
   const source = filters.source || "changes";
   if (!["changes", "inventory"].includes(source))
     throw reportInputError("Selecciona un historial válido.");
