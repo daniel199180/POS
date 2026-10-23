@@ -16,6 +16,7 @@ const emptyForm = {
   name: "",
   description: "",
   sku: "",
+  originBranchId: "",
   barcode: "",
   categoryId: "",
   price: "",
@@ -25,6 +26,31 @@ const emptyForm = {
   isActive: true,
   stockByBranch: {},
 };
+
+function isSkuBranch(branch) {
+  return ["CBB", "SCZ", "LPZ"].includes(
+    String(branch.code || "").toUpperCase(),
+  );
+}
+
+function inferOriginBranchId(product, branches) {
+  if (product.originBranchId) {
+    return product.originBranchId;
+  }
+
+  const prefix = String(product.sku || "")
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    branches.find(
+      (branch) =>
+        isSkuBranch(branch) &&
+        { CBB: "CB", SCZ: "SC", LPZ: "LP" }[
+          String(branch.code || "").toUpperCase()
+        ] === prefix,
+    )?.id || ""
+  );
+}
 
 function money(value) {
   return new Intl.NumberFormat("es-BO", {
@@ -52,21 +78,21 @@ function movementTypeLabel(type) {
 }
 
 function toForm(product, branches) {
-  const stockByBranch = branches.reduce((index, branch) => {
-    const stock = product.stockByBranch?.[branch.id] || {};
-
-    return {
-      ...index,
-      [branch.id]: {
-        quantity: stock.quantity || 0,
-        minStock: stock.minStock || 0,
-      },
-    };
-  }, {});
+  const originBranchId = inferOriginBranchId(product, branches);
+  const stock = product.stockByBranch?.[originBranchId] || {};
+  const stockByBranch = originBranchId
+    ? {
+        [originBranchId]: {
+          quantity: stock.quantity || 0,
+          minStock: stock.minStock || 0,
+        },
+      }
+    : {};
 
   return {
     ...emptyForm,
     ...product,
+    originBranchId,
     price: String(product.price ?? ""),
     cost: String(product.cost ?? ""),
     stockByBranch,
@@ -74,18 +100,19 @@ function toForm(product, branches) {
 }
 
 function createEmptyForm(branches) {
+  const originBranchId = branches.find(isSkuBranch)?.id || "";
+
   return {
     ...emptyForm,
-    stockByBranch: branches.reduce(
-      (index, branch) => ({
-        ...index,
-        [branch.id]: {
-          quantity: 0,
-          minStock: 0,
-        },
-      }),
-      {},
-    ),
+    originBranchId,
+    stockByBranch: originBranchId
+      ? {
+          [originBranchId]: {
+            quantity: 0,
+            minStock: 0,
+          },
+        }
+      : {},
   };
 }
 
@@ -100,6 +127,7 @@ export default function ProductsManagerClient({
   isAdmin,
 }) {
   const canCreateProduct = canManage || canCreateProducts;
+  const skuBranches = useMemo(() => branches.filter(isSkuBranch), [branches]);
   const [products, setProducts] = useState(initialProducts);
   const [stockMovements, setStockMovements] = useState(initialStockMovements);
   const [searchTerm, setSearchTerm] = useState("");
@@ -177,16 +205,20 @@ export default function ProductsManagerClient({
   }
 
   function openInventoryForm(product) {
-    const firstBranch = inventoryBranches[0];
+    const productBranch = inventoryBranches.find(
+      (branch) => branch.id === product.originBranchId,
+    );
 
-    if (!firstBranch) {
-      setError("No tienes sucursales habilitadas para subir inventario.");
+    if (!productBranch) {
+      setError(
+        "Este producto solo puede recibir inventario en su sucursal de origen, que no está habilitada para tu usuario.",
+      );
       return;
     }
 
     setInventoryForm({
       product,
-      branchId: firstBranch.id,
+      branchId: productBranch.id,
       quantity: "",
       reason: "",
     });
@@ -209,6 +241,19 @@ export default function ProductsManagerClient({
     setForm((current) => ({
       ...current,
       [field]: value,
+    }));
+  }
+
+  function updateOriginBranch(branchId) {
+    setForm((current) => ({
+      ...current,
+      originBranchId: branchId,
+      stockByBranch: {
+        [branchId]: current.stockByBranch[branchId] || {
+          quantity: 0,
+          minStock: 0,
+        },
+      },
     }));
   }
 
@@ -573,6 +618,26 @@ export default function ProductsManagerClient({
 
           <div className="mt-4 grid gap-3">
             <label className="text-xs font-medium text-neutral-400">
+              Sucursal de origen
+              <select
+                value={form.originBranchId}
+                onChange={(event) => updateOriginBranch(event.target.value)}
+                disabled={!canCreateProduct || Boolean(form.id)}
+                required
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
+              >
+                <option value="" disabled>
+                  Selecciona una sucursal física
+                </option>
+                {skuBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name} ({branch.code})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs font-medium text-neutral-400">
               Nombre
               <input
                 value={form.name}
@@ -584,12 +649,12 @@ export default function ProductsManagerClient({
 
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs font-medium text-neutral-400">
-                SKU
+                SKU automático
                 <input
                   value={form.sku}
-                  onChange={(event) => updateField("sku", event.target.value)}
-                  disabled={!canCreateProduct}
-                  className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
+                  readOnly
+                  placeholder="Se genera al guardar"
+                  className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-500 transition outline-none"
                 />
               </label>
               <label className="text-xs font-medium text-neutral-400">
@@ -679,7 +744,9 @@ export default function ProductsManagerClient({
                 Stock por sucursal
               </p>
               <div className="mt-3 space-y-2">
-                {branches.map((branch) => (
+                {skuBranches
+                  .filter((branch) => branch.id === form.originBranchId)
+                  .map((branch) => (
                   <div
                     key={branch.id}
                     className="grid grid-cols-[1fr_90px_90px] items-center gap-2"
@@ -710,7 +777,7 @@ export default function ProductsManagerClient({
                       className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
                     />
                   </div>
-                ))}
+                  ))}
               </div>
               <div className="mt-2 grid grid-cols-[1fr_90px_90px] gap-2 text-xs text-neutral-600">
                 <span />
@@ -763,17 +830,19 @@ export default function ProductsManagerClient({
                 Sucursal
                 <select
                   value={inventoryForm.branchId}
-                  onChange={(event) =>
-                    updateInventoryField("branchId", event.target.value)
-                  }
-                  disabled={inventoryBranches.length <= 1 || isSaving}
+                  disabled
                   className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
                 >
-                  {inventoryBranches.map((branch) => (
+                  {inventoryBranches
+                    .filter(
+                      (branch) =>
+                        branch.id === inventoryForm.product.originBranchId,
+                    )
+                    .map((branch) => (
                     <option key={branch.id} value={branch.id}>
                       {branch.name}
                     </option>
-                  ))}
+                    ))}
                 </select>
               </label>
 

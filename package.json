@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "setup:db": "node scripts/setup-database.js",
+    "migrate:product-sku": "node scripts/migrate-product-branch-skus.js",
     "register:functions": "node scripts/register-appwrite-functions.js",
     "deploy:functions": "node scripts/deploy-appwrite-functions.js",
     "seed:pos": "node scripts/seed-pos-demo.js",
@@ -19,6 +20,7 @@
     "test:security": "node --test tests/security-hardening.test.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@tailwindcss/postcss": "^4.3.3",
     "appwrite": "^18.1.1",
     "dotenv": "^17.4.2",

@@ -293,6 +293,12 @@ export async function increaseProductStock(context, input = {}) {
     throw inputError("Solo se puede subir inventario de productos activos.");
   }
 
+  if (product.originBranchId && product.originBranchId !== branchId) {
+    throw inputError(
+      "Este producto solo puede tener inventario en su sucursal de origen.",
+    );
+  }
+
   const stock = await getStockDocument(databases, productId, branchId);
   const previousQty = roundStock(stock?.quantity || 0);
   const newQty = roundStock(previousQty + quantity);

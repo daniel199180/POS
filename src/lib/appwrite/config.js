@@ -25,6 +25,7 @@ export const appwriteConfig = {
       process.env.COL_INSTITUTE_API_SETTINGS || "institute_api_settings",
     categories: process.env.NEXT_PUBLIC_COL_CATEGORIES || "categories",
     products: process.env.NEXT_PUBLIC_COL_PRODUCTS || "products",
+    skuSequences: process.env.COL_SKU_SEQUENCES || "sku_sequences",
     stock: process.env.NEXT_PUBLIC_COL_STOCK || "stock",
     stockMovements:
       process.env.NEXT_PUBLIC_COL_STOCK_MOVEMENTS || "stock_movements",
@@ -38,6 +39,7 @@ export const appwriteConfig = {
       process.env.COL_STATIC_QR_PAYMENTS || "static_qr_payments",
     auditEvents: process.env.COL_AUDIT_EVENTS || "audit_events",
     posUiSettings: process.env.COL_POS_UI_SETTINGS || "pos_ui_settings",
+    mcpSettings: process.env.COL_MCP_SETTINGS || "mcp_settings",
   },
   storageBucket:
     process.env.NEXT_PUBLIC_APPWRITE_STORAGE_BUCKET || "pos_images",

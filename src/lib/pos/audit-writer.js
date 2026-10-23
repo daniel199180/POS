@@ -6,6 +6,7 @@ const fields = {
   product: [
     "name",
     "sku",
+    "originBranchId",
     "barcode",
     "description",
     "categoryId",
@@ -20,6 +21,7 @@ const fields = {
   permission: ["canIncreaseInventory", "canCreateProducts", "allowedBranchIds"],
   user: ["name", "email", "role", "allowedBranchIds", "isActive"],
   pos_settings: ["products", "monthly", "custom", "links", "daily"],
+  mcp_settings: ["isEnabled", "tokenPrefix"],
 };
 
 export function getAuditChanges(entityType, before = {}, after = {}) {

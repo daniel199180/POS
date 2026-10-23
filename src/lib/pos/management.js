@@ -1,4 +1,4 @@
-import { ID, Query } from "node-appwrite";
+import { AppwriteException, ID, Query } from "node-appwrite";
 import { createAdminClient } from "../appwrite/admin.js";
 import { appwriteConfig } from "../appwrite/config.js";
 import { withAudit } from "./audit-writer.js";
@@ -11,6 +11,11 @@ import {
 const { databaseId, collections } = appwriteConfig;
 const documentPermissions = [];
 const productUnits = new Set(["unit", "kg", "liter", "meter"]);
+const skuPrefixByBranchCode = new Map([
+  ["CBB", "CB"],
+  ["SCZ", "SC"],
+  ["LPZ", "LP"],
+]);
 
 function text(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
@@ -55,6 +60,9 @@ function toStockByProduct(stocks) {
 }
 
 function toProduct(document, stockIndex) {
+  const originBranchId = document.originBranchId || "";
+  const productStock = stockIndex[document.$id] || {};
+
   return {
     id: document.$id,
     name: document.name,
@@ -67,7 +75,14 @@ function toProduct(document, stockIndex) {
     unit: document.unit,
     imageFileId: document.imageFileId || "",
     isActive: document.isActive,
-    stockByBranch: stockIndex[document.$id] || {},
+    originBranchId,
+    // El stock operativo de un producto pertenece únicamente a su sucursal
+    // de origen. Las filas históricas de otras sucursales se conservan en la
+    // base para auditoría, pero no se exponen ni se editan desde el catálogo.
+    stockByBranch:
+      originBranchId && productStock[originBranchId]
+        ? { [originBranchId]: productStock[originBranchId] }
+        : {},
   };
 }
 
@@ -90,15 +105,158 @@ function sanitizeBranchInput(input) {
   };
 }
 
-function sanitizeProductInput(input) {
+function inputError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
+function isNotFound(error) {
+  return error instanceof AppwriteException && error.code === 404;
+}
+
+function getSkuPrefix(branch) {
+  const prefix = skuPrefixByBranchCode.get(text(branch.code).toUpperCase());
+
+  if (!prefix) {
+    throw inputError(
+      "Solo las sucursales Cochabamba, Santa Cruz y La Paz pueden generar SKU.",
+    );
+  }
+
+  return prefix;
+}
+
+async function getSkuBranch(databases, context, branchId) {
+  const normalizedBranchId = text(branchId);
+
+  if (!normalizedBranchId || !canAccessBranch(context, normalizedBranchId)) {
+    throw inputError("Selecciona una sucursal física habilitada.");
+  }
+
+  let branch;
+  try {
+    branch = await databases.getDocument({
+      databaseId,
+      collectionId: collections.branches,
+      documentId: normalizedBranchId,
+    });
+  } catch (error) {
+    if (isNotFound(error)) {
+      throw inputError("La sucursal seleccionada no existe.");
+    }
+    throw error;
+  }
+
+  if (branch.isActive === false) {
+    throw inputError("La sucursal seleccionada está inactiva.");
+  }
+
+  return { branch, prefix: getSkuPrefix(branch) };
+}
+
+function getNumericSku(sku, prefix) {
+  const match = new RegExp(`^${prefix}(\\d+)$`).exec(text(sku).toUpperCase());
+  return match ? Number(match[1]) : 0;
+}
+
+function validateProductBasics(input) {
   const name = text(input.name);
-  const sku = text(input.sku).toUpperCase();
+  const price = number(input.price, NaN);
+
+  if (!name || !Number.isFinite(price) || price < 0) {
+    throw inputError("Nombre y precio válido son obligatorios.");
+  }
+}
+
+async function ensureSkuSequence(databases, branchId, prefix) {
+  try {
+    return await databases.getDocument({
+      databaseId,
+      collectionId: collections.skuSequences,
+      documentId: branchId,
+    });
+  } catch (error) {
+    if (!isNotFound(error)) {
+      throw error;
+    }
+  }
+
+  const products = await databases.listDocuments({
+    databaseId,
+    collectionId: collections.products,
+    queries: [Query.limit(5000)],
+  });
+  const maxNumber = products.documents.reduce(
+    (max, product) => Math.max(max, getNumericSku(product.sku, prefix)),
+    0,
+  );
+  const data = {
+    branchId,
+    prefix,
+    nextNumber: maxNumber + 1,
+  };
+
+  try {
+    return await databases.createDocument({
+      databaseId,
+      collectionId: collections.skuSequences,
+      documentId: branchId,
+      data,
+      permissions: documentPermissions,
+    });
+  } catch (error) {
+    if (!error || error.code !== 409) {
+      throw error;
+    }
+
+    return databases.getDocument({
+      databaseId,
+      collectionId: collections.skuSequences,
+      documentId: branchId,
+    });
+  }
+}
+
+async function allocateSku(databases, branchId, prefix) {
+  await ensureSkuSequence(databases, branchId, prefix);
+  const sequence = await databases.incrementDocumentAttribute({
+    databaseId,
+    collectionId: collections.skuSequences,
+    documentId: branchId,
+    attribute: "nextNumber",
+    value: 1,
+  });
+  const number = sequence.nextNumber - 1;
+
+  if (!Number.isInteger(number) || number < 1 || number > 9999) {
+    throw inputError("Se agotó la numeración disponible para esta sucursal.");
+  }
+
+  return `${prefix}${String(number).padStart(4, "0")}`;
+}
+
+function sanitizeProductInput(input, { sku, originBranchId }) {
+  const name = text(input.name);
   const price = number(input.price, NaN);
   const unit = productUnits.has(input.unit) ? input.unit : "unit";
 
-  if (!name || !sku || !Number.isFinite(price) || price < 0) {
-    throw new Error("Nombre, SKU y precio valido son obligatorios.");
+  if (
+    !name ||
+    !sku ||
+    !originBranchId ||
+    !Number.isFinite(price) ||
+    price < 0
+  ) {
+    throw inputError(
+      "Nombre, sucursal de origen y precio válido son obligatorios.",
+    );
   }
+
+  const rawStock =
+    input.stockByBranch && typeof input.stockByBranch === "object"
+      ? input.stockByBranch[originBranchId] || {}
+      : {};
 
   return {
     product: {
@@ -112,11 +270,9 @@ function sanitizeProductInput(input) {
       unit,
       imageFileId: text(input.imageFileId),
       isActive: bool(input.isActive, true),
+      originBranchId,
     },
-    stockByBranch:
-      input.stockByBranch && typeof input.stockByBranch === "object"
-        ? input.stockByBranch
-        : {},
+    stockByBranch: { [originBranchId]: rawStock },
   };
 }
 
@@ -415,7 +571,17 @@ export async function createProduct(context, input) {
   assertCanCreateProducts(context);
 
   const { databases } = createAdminClient(context.userAgent);
-  const { product, stockByBranch } = sanitizeProductInput(input);
+  validateProductBasics(input);
+  const { branch, prefix } = await getSkuBranch(
+    databases,
+    context,
+    input.originBranchId,
+  );
+  const sku = await allocateSku(databases, branch.$id, prefix);
+  const { product, stockByBranch } = sanitizeProductInput(input, {
+    sku,
+    originBranchId: branch.$id,
+  });
   const productId = ID.unique();
   const document = await withAudit(
     databases,
@@ -454,11 +620,23 @@ export async function updateProduct(context, productId, input) {
   assertCanManageCatalog(context);
 
   const { databases } = createAdminClient(context.userAgent);
-  const { product, stockByBranch } = sanitizeProductInput(input);
   const before = await databases.getDocument({
     databaseId,
     collectionId: collections.products,
     documentId: productId,
+  });
+  const originBranchId = text(before.originBranchId || input.originBranchId);
+  if (
+    text(input.originBranchId) &&
+    text(input.originBranchId) !== originBranchId
+  ) {
+    throw inputError(
+      "La sucursal de origen de un producto no se puede cambiar.",
+    );
+  }
+  const { product, stockByBranch } = sanitizeProductInput(input, {
+    sku: before.sku,
+    originBranchId,
   });
   await withAudit(
     databases,

@@ -1,7 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Clock3, Image, ImageUp, Loader2, Save, Trash2 } from "lucide-react";
+import {
+  Check,
+  Clock3,
+  Copy,
+  Image,
+  ImageUp,
+  KeyRound,
+  Loader2,
+  Power,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import InstituteConnectionCard from "./institute-connection-card";
 
 function formatFileSize(bytes = 0) {
@@ -20,7 +33,9 @@ export default function SettingsClient({
   initialSettings,
   initialInstituteSettings,
   initialTimeZone,
+  initialMcpSettings,
   canManage,
+  canManageMcp,
 }) {
   const [settings, setSettings] = useState(initialSettings);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -33,6 +48,10 @@ export default function SettingsClient({
     initialTimeZone?.timeZone || "America/La_Paz",
   );
   const [isSavingTimeZone, setIsSavingTimeZone] = useState(false);
+  const [mcpSettings, setMcpSettings] = useState(initialMcpSettings);
+  const [mcpToken, setMcpToken] = useState("");
+  const [mcpOrigin, setMcpOrigin] = useState("");
+  const [isMcpBusy, setIsMcpBusy] = useState(false);
   const logo = settings.logo;
   const displayLogoUrl = previewUrl || logo?.url || "";
   const allowedTypes = useMemo(
@@ -49,6 +68,10 @@ export default function SettingsClient({
     },
     [previewUrl],
   );
+
+  useEffect(() => {
+    setMcpOrigin(window.location.origin);
+  }, []);
 
   function handleFileChange(event) {
     const file = event.target.files?.[0] || null;
@@ -175,6 +198,70 @@ export default function SettingsClient({
       setIsSavingTimeZone(false);
     }
   }
+
+  async function updateMcp({ enabled, rotateToken = false } = {}) {
+    if (!canManageMcp) return;
+
+    setIsMcpBusy(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const response = await fetch("/api/pos/settings/mcp", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled, rotateToken }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.message || "No se pudo actualizar el MCP.");
+      }
+
+      setMcpSettings(payload.settings);
+      if (payload.token) {
+        setMcpToken(payload.token);
+        setMessage(
+          "Token generado. Cópialo ahora; por seguridad no volverá a mostrarse.",
+        );
+      } else {
+        setMessage(enabled ? "MCP activado." : "MCP desactivado.");
+      }
+    } catch (saveError) {
+      setError(saveError.message || "No se pudo actualizar el MCP.");
+    } finally {
+      setIsMcpBusy(false);
+    }
+  }
+
+  async function copyText(value, successMessage) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setMessage(successMessage);
+      setError("");
+    } catch {
+      setError("No se pudo copiar. Selecciona el contenido manualmente.");
+    }
+  }
+
+  const mcpEndpoint = `${mcpOrigin || "https://tu-dominio"}/api/mcp`;
+  const mcpConfig = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          mcpServers: {
+            pos: {
+              url: mcpEndpoint,
+              headers: { Authorization: "Bearer ${AGENT_REPORT_TOKEN}" },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    [mcpEndpoint],
+  );
 
   return (
     <section className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:px-6">
@@ -347,6 +434,138 @@ export default function SettingsClient({
           </button>
         </div>
       </form>
+
+      {canManageMcp && mcpSettings ? (
+        <section className="rounded-md border border-neutral-800 bg-neutral-900 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="grid size-10 shrink-0 place-items-center rounded-md bg-violet-950 text-violet-300">
+                <ShieldCheck className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-neutral-500 uppercase">
+                  Integración segura
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">MCP del POS</h2>
+                <p className="mt-1 max-w-2xl text-sm text-neutral-500">
+                  Permite a un agente consultar reportes diarios en modo solo
+                  lectura. Solo los superadministradores pueden gestionarlo.
+                </p>
+              </div>
+            </div>
+            <span
+              className={
+                mcpSettings.active
+                  ? "inline-flex items-center gap-2 rounded-md border border-emerald-900 bg-emerald-950 px-3 py-1.5 text-xs font-medium text-emerald-200"
+                  : "inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs font-medium text-neutral-400"
+              }
+            >
+              <span className="size-2 rounded-full bg-current" />
+              {mcpSettings.active ? "Activo" : "Inactivo"}
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto]">
+            <div className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-3">
+              <p className="text-xs font-medium text-neutral-500 uppercase">
+                Endpoint
+              </p>
+              <p className="mt-1 font-mono text-sm break-all text-neutral-200">
+                {mcpEndpoint}
+              </p>
+              <p className="mt-2 text-xs text-neutral-500">
+                Fuente actual: {mcpSettings.source}. Token:{" "}
+                {mcpSettings.tokenPrefix || "sin configurar"}.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+              <button
+                type="button"
+                onClick={() => updateMcp({ enabled: !mcpSettings.enabled })}
+                disabled={
+                  isMcpBusy || (!mcpSettings.enabled && !mcpSettings.configured)
+                }
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-neutral-700 px-4 text-sm font-semibold text-neutral-200 transition hover:border-neutral-400 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isMcpBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Power className="size-4" />
+                )}
+                {mcpSettings.enabled ? "Desactivar" : "Activar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => updateMcp({ enabled: true, rotateToken: true })}
+                disabled={isMcpBusy}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-neutral-100 px-4 text-sm font-semibold text-neutral-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+              >
+                {isMcpBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Generar/rotar token
+              </button>
+            </div>
+          </div>
+
+          {mcpToken ? (
+            <div className="mt-3 rounded-md border border-amber-900 bg-amber-950/40 p-3">
+              <p className="text-sm font-semibold text-amber-100">
+                Token nuevo: cópialo ahora
+              </p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  readOnly
+                  type="text"
+                  value={mcpToken}
+                  className="h-11 min-w-0 flex-1 rounded-md border border-amber-900 bg-neutral-950 px-3 font-mono text-xs text-amber-100 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => copyText(mcpToken, "Token copiado.")}
+                  className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md border border-amber-800 px-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-900/50"
+                >
+                  <Copy className="size-4" />
+                  Copiar
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-amber-200/70">
+                Después de salir o recargar esta pantalla, el token completo no
+                volverá a estar disponible.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="mt-3 rounded-md border border-neutral-800 bg-neutral-950 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <KeyRound className="size-4 text-neutral-400" />
+                <p className="text-sm font-medium text-neutral-200">
+                  Configuración para el agente
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyText(mcpConfig, "Configuración copiada.")}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-neutral-700 px-3 text-xs font-semibold text-neutral-300 transition hover:border-neutral-400 hover:text-neutral-100"
+              >
+                <Copy className="size-3.5" />
+                Copiar configuración
+              </button>
+            </div>
+            <pre className="mt-3 overflow-x-auto rounded-md border border-neutral-800 bg-neutral-900 p-3 text-xs break-all whitespace-pre-wrap text-neutral-400">
+              {mcpConfig}
+            </pre>
+            <p className="mt-2 flex items-center gap-2 text-xs text-neutral-500">
+              <Check className="size-3.5 text-emerald-400" />
+              La configuración usa la variable segura AGENT_REPORT_TOKEN y no
+              expone el token en este bloque.
+            </p>
+          </div>
+        </section>
+      ) : null}
 
       <InstituteConnectionCard
         initialSettings={initialInstituteSettings}

@@ -22,6 +22,7 @@ const collectionIds = [
   process.env.COL_BRANCH_PAYMENT_CREDENTIALS || "branch_payment_credentials",
   process.env.COL_INSTITUTE_API_SETTINGS || "institute_api_settings",
   process.env.NEXT_PUBLIC_COL_PRODUCTS || "products",
+  process.env.COL_SKU_SEQUENCES || "sku_sequences",
   process.env.NEXT_PUBLIC_COL_STOCK || "stock",
   process.env.NEXT_PUBLIC_COL_STOCK_MOVEMENTS || "stock_movements",
   process.env.NEXT_PUBLIC_COL_INVENTORY_GRANTS || "inventory_grants",
@@ -30,6 +31,7 @@ const collectionIds = [
   process.env.COL_PAYMENT_LINKS || "payment_links",
   process.env.COL_AUDIT_EVENTS || "audit_events",
   process.env.COL_POS_UI_SETTINGS || "pos_ui_settings",
+  process.env.COL_MCP_SETTINGS || "mcp_settings",
 ];
 
 function required(name) {

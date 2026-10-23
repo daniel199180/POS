@@ -78,6 +78,8 @@ function toStockByProduct(stocks) {
 }
 
 function toProduct(document, stockIndex) {
+  const originBranchId = document.originBranchId || "";
+
   return {
     id: document.$id,
     name: document.name,
@@ -89,7 +91,11 @@ function toProduct(document, stockIndex) {
     unit: document.unit,
     imageFileId: document.imageFileId || "",
     isActive: document.isActive,
-    stockByBranch: stockIndex[document.$id] || {},
+    originBranchId,
+    stockByBranch:
+      originBranchId && stockIndex[document.$id]?.[originBranchId]
+        ? { [originBranchId]: stockIndex[document.$id][originBranchId] }
+        : {},
   };
 }
 
@@ -160,6 +166,10 @@ export async function getProductsPage({
   const products = productsResult.documents
     .map((product) => toProduct(product, stockIndex))
     .filter((product) => {
+      if (product.originBranchId !== branchId) {
+        return false;
+      }
+
       const stock = product.stockByBranch[branchId]?.quantity || 0;
       return stock > 0 && matchesSearch(product, search);
     })

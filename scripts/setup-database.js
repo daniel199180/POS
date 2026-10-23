@@ -56,6 +56,7 @@ const PRIVATE_COLLECTION_IDS = new Set([
   "branch_payment_methods",
   "branch_payment_credentials",
   "products",
+  process.env.COL_SKU_SEQUENCES || "sku_sequences",
   "stock",
   "stock_movements",
   "inventory_grants",
@@ -67,6 +68,7 @@ const PRIVATE_COLLECTION_IDS = new Set([
   process.env.COL_STATIC_QR_PAYMENTS || "static_qr_payments",
   process.env.COL_AUDIT_EVENTS || "audit_events",
   process.env.COL_POS_UI_SETTINGS || "pos_ui_settings",
+  process.env.COL_MCP_SETTINGS || "mcp_settings",
 ]);
 
 const stats = {
@@ -297,6 +299,7 @@ const collections = [
       { type: "string", key: "name", size: 200, required: true },
       { type: "string", key: "description", size: 500, required: false },
       { type: "string", key: "sku", size: 50, required: true },
+      { type: "string", key: "originBranchId", size: 36, required: false },
       { type: "string", key: "barcode", size: 50, required: false },
       { type: "string", key: "categoryId", size: 36, required: false },
       { type: "float", key: "price", required: true },
@@ -317,6 +320,19 @@ const collections = [
       { key: "idx_categoryId", type: "key", attributes: ["categoryId"] },
       { key: "idx_isActive", type: "key", attributes: ["isActive"] },
       { key: "idx_name_fulltext", type: "fulltext", attributes: ["name"] },
+    ],
+  },
+  {
+    id: process.env.COL_SKU_SEQUENCES || "sku_sequences",
+    name: "Product SKU Sequences",
+    attributes: [
+      { type: "string", key: "branchId", size: 36, required: true },
+      { type: "string", key: "prefix", size: 4, required: true },
+      { type: "integer", key: "nextNumber", required: true },
+    ],
+    indexes: [
+      { key: "idx_branchId", type: "unique", attributes: ["branchId"] },
+      { key: "idx_prefix", type: "key", attributes: ["prefix"] },
     ],
   },
   {
@@ -516,6 +532,17 @@ const collections = [
     indexes: [
       { key: "idx_branchId", type: "unique", attributes: ["branchId"] },
     ],
+  },
+  {
+    id: process.env.COL_MCP_SETTINGS || "mcp_settings",
+    name: "MCP Settings",
+    attributes: [
+      { type: "boolean", key: "isEnabled", required: true, default: true },
+      { type: "string", key: "encryptedPayload", size: 1000, required: false },
+      { type: "string", key: "tokenPrefix", size: 32, required: false },
+      { type: "string", key: "updatedByUserId", size: 36, required: false },
+    ],
+    indexes: [],
   },
   {
     id: process.env.COL_PAYMENT_LINKS || "payment_links",
