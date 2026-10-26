@@ -763,6 +763,22 @@ export default function DashboardClient({
     loadDailyIncome({ branchId: selectedBranchId });
   }, [selectedBranchId, user.id]);
 
+  useEffect(() => {
+    if (
+      activePosTab !== "daily" ||
+      !enabledPosTabs.daily ||
+      !selectedBranchId
+    ) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      loadDailyIncome({ branchId: selectedBranchId, silent: true });
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, [activePosTab, enabledPosTabs.daily, selectedBranchId]);
+
   async function loadProductsPage({ reset = false } = {}) {
     if (!selectedBranchId || (!reset && isLoadingProducts)) {
       return;

@@ -750,7 +750,9 @@ export async function getDailyIncomeReport(context, filters = {}) {
       dateFrom: reportDate,
       dateTo: reportDate,
       branchId,
-      cashierId: context.user.id,
+      // Los administradores consultan el consolidado de la sucursal. Los
+      // cajeros mantienen el alcance de sus propias ventas.
+      ...(context.isAdmin ? {} : { cashierId: context.user.id }),
       status: "completed",
     },
     { paginate: false, timeZone },
