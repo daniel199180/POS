@@ -8,11 +8,17 @@ import { parseReportRange } from "./report-dates.js";
 import { getTimeZoneSettings } from "./settings.js";
 
 function lowStockRows(products, stocks, branches) {
-  const productsById = new Map(products.map((product) => [product.$id, product]));
-  const branchNames = new Map(branches.map((branch) => [branch.id, branch.name]));
+  const productsById = new Map(
+    products.map((product) => [product.$id, product]),
+  );
+  const branchNames = new Map(
+    branches.map((branch) => [branch.id, branch.name]),
+  );
 
   return stocks
-    .filter((stock) => Number(stock.quantity || 0) <= Number(stock.minStock || 0))
+    .filter(
+      (stock) => Number(stock.quantity || 0) <= Number(stock.minStock || 0),
+    )
     .map((stock) => {
       const product = productsById.get(stock.productId);
       return {
@@ -26,15 +32,23 @@ function lowStockRows(products, stocks, branches) {
         unit: product?.unit || "unit",
       };
     })
-    .sort((left, right) => left.quantity - right.quantity || left.productName.localeCompare(right.productName));
+    .sort(
+      (left, right) =>
+        left.quantity - right.quantity ||
+        left.productName.localeCompare(right.productName),
+    );
 }
 
 export async function getAgentDailyReport(context, filters = {}) {
   assertCanViewAnalytics(context);
   const { timeZone } = await getTimeZoneSettings(context);
-  const date = filters.date || new Date().toLocaleDateString("en-CA", { timeZone });
+  const date =
+    filters.date || new Date().toLocaleDateString("en-CA", { timeZone });
   const range = parseReportRange({ dateFrom: date, dateTo: date }, timeZone);
-  const analytics = await getSalesAnalytics(context, { dateFrom: date, dateTo: date });
+  const analytics = await getSalesAnalytics(context, {
+    dateFrom: date,
+    dateTo: date,
+  });
   const { databases } = createAdminClient(context.userAgent);
   const options = await getAdminReportOptions(context);
   const branchIds = options.branches.map((branch) => branch.id);
@@ -46,7 +60,13 @@ export async function getAgentDailyReport(context, filters = {}) {
     branchIds.length
       ? readReportDocuments(databases, appwriteConfig.collections.stock, [
           Query.equal("branchId", branchIds),
-          Query.select(["productId", "branchId", "quantity", "minStock"]),
+          Query.select([
+            "$id",
+            "productId",
+            "branchId",
+            "quantity",
+            "minStock",
+          ]),
         ])
       : [],
   ]);

@@ -3,6 +3,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod/v4";
 import { getAgentDailyReport } from "@/lib/pos/agent-reports";
+import {
+  getAgentInventoryMovementsReport,
+  getAgentInventoryReport,
+  getAgentInventoryStock,
+} from "@/lib/pos/agent-inventory";
 import { getMcpAccessToken } from "@/lib/pos/mcp-settings";
 
 export const runtime = "nodejs";
@@ -59,6 +64,89 @@ function createServer() {
         structuredContent: report,
       };
     },
+  );
+
+  const branchId = z
+    .string()
+    .min(1)
+    .optional()
+    .describe("ID de sucursal. Si se omite, incluye todas.");
+  const page = z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Página de resultados; inicia en 1.");
+  const pageSize = z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("Registros por página; máximo 100.");
+  const date = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .describe("Fecha local en formato YYYY-MM-DD.");
+  const result = (report) => ({
+    content: [{ type: "text", text: JSON.stringify(report) }],
+    structuredContent: report,
+  });
+
+  server.registerTool(
+    "inventory_stock",
+    {
+      description:
+        "Consulta existencias actuales de productos activos por sucursal, con SKU, cantidad, mínimos y estado. Permite buscar y paginar.",
+      inputSchema: {
+        branchId,
+        search: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Busca por nombre, SKU o código de barras."),
+        status: z
+          .enum(["all", "in_stock", "low_stock", "out_of_stock"])
+          .optional()
+          .describe("Filtra por disponibilidad."),
+        page,
+        pageSize,
+      },
+    },
+    async (filters) =>
+      result(await getAgentInventoryStock(agentContext(), filters)),
+  );
+
+  server.registerTool(
+    "inventory_report",
+    {
+      description:
+        "Resume el inventario actual por sucursal: productos disponibles, stock bajo y agotados, valor conocido al costo y hasta 100 alertas. Para todas las alertas usa inventory_stock con status y páginas.",
+      inputSchema: { branchId },
+    },
+    async (filters) =>
+      result(await getAgentInventoryReport(agentContext(), filters)),
+  );
+
+  server.registerTool(
+    "inventory_movements_report",
+    {
+      description:
+        "Reporta entradas, salidas, ajustes y transferencias de inventario por período y sucursal. Devuelve totales completos y movimientos paginados.",
+      inputSchema: {
+        dateFrom: date.describe(
+          "Inicio del período. Por defecto, hace 29 días.",
+        ),
+        dateTo: date.describe("Fin del período. Por defecto, hoy."),
+        branchId,
+        productId: z.string().min(1).optional().describe("ID del producto."),
+        page,
+        pageSize,
+      },
+    },
+    async (filters) =>
+      result(await getAgentInventoryMovementsReport(agentContext(), filters)),
   );
 
   return server;
