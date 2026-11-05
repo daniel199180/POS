@@ -6,6 +6,8 @@ import {
   Check,
   ChevronDown,
   MapPin,
+  MessageCircle,
+  Minus,
   Package,
   Plus,
   RefreshCw,
@@ -31,7 +33,7 @@ const unitNames = {
 function ProductImage({ product }) {
   const [failed, setFailed] = useState(false);
   return (
-    <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_25%_18%,#f3f5eb_0%,#e5eee7_58%,#dce8e2_100%)]">
+    <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_25%_18%,#f7eaf4_0%,#f0ddec_58%,#e8d0e4_100%)]">
       {product.imageUrl && !failed ? (
         <img
           src={product.imageUrl}
@@ -41,11 +43,11 @@ function ProductImage({ product }) {
           className="size-full object-cover transition duration-500 group-hover:scale-105"
         />
       ) : (
-        <div className="grid size-24 place-items-center rounded-[2rem] border border-white/70 bg-white/40 text-[#7aa28f] shadow-[0_12px_40px_rgba(31,80,65,0.06)]">
+        <div className="grid size-24 place-items-center rounded-[2rem] border border-white/70 bg-white/40 text-[#a46a9c] shadow-[0_12px_40px_rgba(31,80,65,0.06)]">
           <Package className="size-11 stroke-[1.25]" />
         </div>
       )}
-      <span className="absolute top-4 left-4 rounded-full border border-[#b6dcc4] bg-white/90 px-3 py-1.5 text-[11px] font-bold tracking-wide text-[#28734e] backdrop-blur-sm">
+      <span className="absolute top-4 left-4 rounded-full border border-[#ddb9d6] bg-white/90 px-3 py-1.5 text-[11px] font-bold tracking-wide text-[#79276d] backdrop-blur-sm">
         Disponible
       </span>
     </div>
@@ -87,6 +89,8 @@ export default function CatalogClient({
   const initialRef = useRef(true);
   const loadingRef = useRef(false);
   const sentinelRef = useRef(null);
+  const cartTriggerRef = useRef(null);
+  const cartCloseRef = useRef(null);
   const [logoFailed, setLogoFailed] = useState(false);
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -191,6 +195,26 @@ export default function CatalogClient({
 
   const whatsappReady = /^\d{8,15}$/.test(branch.whatsappNumber || "");
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const cartTotal = cart.reduce(
+    (sum, item) => sum + item.product.price * item.quantity,
+    0,
+  );
+
+  useEffect(() => {
+    if (!cartOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    cartCloseRef.current?.focus();
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setCartOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+      cartTriggerRef.current?.focus();
+    };
+  }, [cartOpen]);
 
   async function shareCatalog() {
     try {
@@ -203,12 +227,16 @@ export default function CatalogClient({
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f7f2] text-[#172b32]">
-      <div className="mx-auto max-w-7xl px-4 pb-20 sm:px-7 lg:px-10">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dbe2df] py-5 sm:py-7">
-          <div className="flex min-w-0 items-center gap-3 text-[#17363e]">
+    <main className="min-h-screen bg-[#fcf9fc] text-[#2f1830]">
+      <div
+        className="mx-auto max-w-7xl px-4 pb-32 sm:px-7 lg:px-10"
+        inert={cartOpen ? true : undefined}
+        aria-hidden={cartOpen}
+      >
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#eadce8] py-5 sm:py-7">
+          <div className="flex min-w-0 items-center gap-3 text-[#3c1b3a]">
             {logoFailed ? (
-              <span className="grid size-12 place-items-center rounded-xl bg-[#14343d] text-xs font-bold text-white">
+              <span className="grid size-12 place-items-center rounded-xl bg-[#5c1b57] text-xs font-bold text-white">
                 POS
               </span>
             ) : (
@@ -220,7 +248,7 @@ export default function CatalogClient({
               />
             )}
             <div className="min-w-0">
-              <p className="text-[11px] font-bold tracking-[0.18em] text-[#6b8a7a] uppercase">
+              <p className="text-[11px] font-bold tracking-[0.18em] text-[#936f8d] uppercase">
                 Catálogo
               </p>
               <p className="truncate text-sm font-semibold sm:text-base">
@@ -238,7 +266,7 @@ export default function CatalogClient({
                 })
               }
               disabled={isRefreshing}
-              className="grid size-10 place-items-center rounded-full border border-[#cedbd4] bg-white text-[#48665b] transition hover:border-[#5f987c] disabled:opacity-50"
+              className="grid size-10 place-items-center rounded-full border border-[#d9c2d6] bg-white text-[#72506e] transition hover:border-[#a65395] disabled:opacity-50"
               aria-label="Actualizar disponibilidad"
               title="Actualizar disponibilidad"
             >
@@ -249,36 +277,27 @@ export default function CatalogClient({
             <button
               type="button"
               onClick={shareCatalog}
-              className="inline-flex h-10 items-center gap-2 rounded-full border border-[#cedbd4] bg-white px-4 text-xs font-semibold transition hover:border-[#5f987c]"
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-[#d9c2d6] bg-white px-4 text-xs font-semibold transition hover:border-[#a65395]"
               aria-label="Copiar enlace del catálogo"
             >
               {copied ? (
-                <Check className="size-4 text-[#278b5b]" />
+                <Check className="size-4 text-[#8c2f7f]" />
               ) : (
                 <Share2 className="size-4" />
               )}
               {copied ? "Enlace copiado" : "Compartir"}
             </button>
-            <button
-              type="button"
-              onClick={() => setCartOpen(true)}
-              aria-label={`Abrir carrito, ${cartCount} productos`}
-              className="inline-flex h-10 items-center gap-2 rounded-full bg-[#173e35] px-4 text-xs font-semibold text-white"
-            >
-              <ShoppingCart className="size-4" /> Carrito{" "}
-              {cartCount ? `(${cartCount})` : ""}
-            </button>
           </div>
         </header>
 
-        <section className="mt-10 border-b border-[#dbe2df] pb-8 sm:mt-14 sm:pb-10">
-          <p className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.18em] text-[#4b8a69] uppercase">
+        <section className="mt-10 border-b border-[#eadce8] pb-8 sm:mt-14 sm:pb-10">
+          <p className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.18em] text-[#8c2f7f] uppercase">
             <MapPin className="size-4" /> {branch.city}
           </p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
             Catálogo de {branch.name}
           </h1>
-          <p className="mt-4 text-sm text-[#657574] sm:text-base">
+          <p className="mt-4 text-sm text-[#7d6a7b] sm:text-base">
             {initialTotal}{" "}
             {initialTotal === 1
               ? "producto disponible"
@@ -297,25 +316,25 @@ export default function CatalogClient({
                 Productos disponibles
               </h2>
             </div>
-            <span className="text-sm text-[#6e807b]">{total} resultados</span>
+            <span className="text-sm text-[#816e7f]">{total} resultados</span>
           </div>
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             <label className="relative flex-1">
               <span className="sr-only">Buscar productos</span>
-              <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-[#7e918a]" />
+              <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-[#958293]" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Busca por nombre o referencia"
-                className="h-12 w-full rounded-2xl border border-[#d9e4dc] bg-white pr-12 pl-12 text-sm outline-none placeholder:text-[#9aaa9f] focus:border-[#6b9e80]"
+                className="h-12 w-full rounded-2xl border border-[#e4d4e1] bg-white pr-12 pl-12 text-sm outline-none placeholder:text-[#ac99a9] focus:border-[#a65395]"
               />
               {search ? (
                 <button
                   type="button"
                   onClick={() => setSearch("")}
                   aria-label="Limpiar búsqueda"
-                  className="absolute top-1/2 right-3 grid size-7 -translate-y-1/2 place-items-center rounded-full text-[#7e918a] hover:bg-[#edf3ec]"
+                  className="absolute top-1/2 right-3 grid size-7 -translate-y-1/2 place-items-center rounded-full text-[#958293] hover:bg-[#f7edf5]"
                 >
                   <X className="size-4" />
                 </button>
@@ -326,13 +345,13 @@ export default function CatalogClient({
               <select
                 value={order}
                 onChange={(event) => setOrder(event.target.value)}
-                className="h-12 w-full appearance-none rounded-2xl border border-[#d9e4dc] bg-white px-4 pr-10 text-sm font-medium outline-none focus:border-[#6b9e80]"
+                className="h-12 w-full appearance-none rounded-2xl border border-[#e4d4e1] bg-white px-4 pr-10 text-sm font-medium outline-none focus:border-[#a65395]"
               >
                 <option value="name">Nombre A–Z</option>
                 <option value="priceAsc">Precio: menor a mayor</option>
                 <option value="priceDesc">Precio: mayor a menor</option>
               </select>
-              <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-[#73877f]" />
+              <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-[#8d778a]" />
             </label>
           </div>
 
@@ -348,7 +367,7 @@ export default function CatalogClient({
                   type="button"
                   onClick={() => setCategoryId(category.id)}
                   aria-pressed={categoryId === category.id}
-                  className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${categoryId === category.id ? "bg-[#dcefe2] text-[#246747]" : "bg-white text-[#647b70] hover:bg-[#eaf2ea]"}`}
+                  className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${categoryId === category.id ? "bg-[#f1e0ed] text-[#722568]" : "bg-white text-[#7d6879] hover:bg-[#f5e9f2]"}`}
                 >
                   {category.name}
                 </button>
@@ -361,11 +380,11 @@ export default function CatalogClient({
               {products.map((product) => (
                 <article
                   key={product.id}
-                  className="group overflow-hidden rounded-[1.4rem] border border-[#e0e8df] bg-white shadow-[0_7px_28px_rgba(20,52,61,0.04)] transition hover:-translate-y-1 hover:shadow-[0_18px_42px_rgba(20,52,61,0.1)]"
+                  className="group overflow-hidden rounded-[1.4rem] border border-[#eadce8] bg-white shadow-[0_7px_28px_rgba(20,52,61,0.04)] transition hover:-translate-y-1 hover:shadow-[0_18px_42px_rgba(20,52,61,0.1)]"
                 >
                   <ProductImage product={product} />
                   <div className="p-5">
-                    <p className="text-[11px] font-bold tracking-[0.12em] text-[#569174] uppercase">
+                    <p className="text-[11px] font-bold tracking-[0.12em] text-[#8c2f7f] uppercase">
                       {product.categoryId
                         ? product.categoryName
                         : `Ref. ${product.sku}`}
@@ -374,17 +393,17 @@ export default function CatalogClient({
                       {product.name}
                     </h3>
                     {product.description ? (
-                      <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-[#71847c]">
+                      <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-[#816f7e]">
                         {product.description}
                       </p>
                     ) : (
                       <div className="min-h-10" />
                     )}
-                    <div className="mt-4 border-t border-[#eef2ed] pt-4">
-                      <p className="text-xl font-bold tracking-tight text-[#193e3d]">
+                    <div className="mt-4 border-t border-[#f3eaf1] pt-4">
+                      <p className="text-xl font-bold tracking-tight text-[#4d2148]">
                         {currency.format(product.price)}
                       </p>
-                      <p className="mt-1 text-xs text-[#85978e]">
+                      <p className="mt-1 text-xs text-[#9b8697]">
                         por {unitNames[product.unit] || product.unit}
                       </p>
                     </div>
@@ -392,7 +411,7 @@ export default function CatalogClient({
                       <button
                         type="button"
                         onClick={() => addToCart(product)}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#91b6a0] text-sm font-semibold text-[#286449]"
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#ba84af] text-sm font-semibold text-[#742669]"
                       >
                         <Plus className="size-4" /> Agregar al carrito
                       </button>
@@ -403,12 +422,12 @@ export default function CatalogClient({
                           ])}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex h-10 items-center justify-center rounded-xl bg-[#25845a] text-sm font-semibold text-white"
+                          className="inline-flex h-10 items-center justify-center rounded-xl bg-[#8c2f7f] text-sm font-semibold text-white"
                         >
                           Comprar por WhatsApp
                         </a>
                       ) : (
-                        <span className="text-center text-xs text-[#8a9a90]">
+                        <span className="text-center text-xs text-[#9a8796]">
                           WhatsApp aún no configurado
                         </span>
                       )}
@@ -418,14 +437,14 @@ export default function CatalogClient({
               ))}
             </div>
           ) : !loading ? (
-            <div className="mt-7 rounded-[1.5rem] border border-[#dce6df] bg-white px-6 py-16 text-center">
-              <Package className="mx-auto size-11 text-[#a2bca9]" />
+            <div className="mt-7 rounded-[1.5rem] border border-[#e9d9e6] bg-white px-6 py-16 text-center">
+              <Package className="mx-auto size-11 text-[#b68eaf]" />
               <h3 className="mt-5 text-lg font-semibold">
                 {initialTotal
                   ? "No encontramos coincidencias"
                   : "Aún no hay productos disponibles"}
               </h3>
-              <p className="mt-2 text-sm text-[#74877c]">
+              <p className="mt-2 text-sm text-[#877485]">
                 {initialTotal
                   ? "Prueba otra búsqueda o categoría."
                   : "Vuelve a consultar este catálogo más tarde."}
@@ -437,7 +456,7 @@ export default function CatalogClient({
                     setSearch("");
                     setCategoryId("");
                   }}
-                  className="mt-5 text-sm font-semibold text-[#307953] hover:underline"
+                  className="mt-5 text-sm font-semibold text-[#862b78] hover:underline"
                 >
                   Limpiar filtros
                 </button>
@@ -446,7 +465,7 @@ export default function CatalogClient({
           ) : null}
           <div ref={sentinelRef} className="h-10" aria-hidden="true" />
           {loading ? (
-            <p className="text-center text-sm text-[#71847c]">
+            <p className="text-center text-sm text-[#816f7e]">
               Cargando productos…
             </p>
           ) : null}
@@ -469,112 +488,220 @@ export default function CatalogClient({
           ) : null}
         </section>
 
-        <footer className="mt-20 flex flex-wrap items-center justify-between gap-3 border-t border-[#dbe2df] pt-7 text-xs text-[#879a90]">
+        <footer className="mt-20 flex flex-wrap items-center justify-between gap-3 border-t border-[#eadce8] pt-7 text-xs text-[#9b8897]">
           <span>Catálogo de {branch.name}</span>
           <span>El cajero confirma disponibilidad y completa la venta.</span>
         </footer>
       </div>
+      {!cartOpen ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#4c1849] bg-[#5c1b57] pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-14px_38px_rgba(47,24,48,0.22)]">
+          <button
+            ref={cartTriggerRef}
+            type="button"
+            onClick={() => setCartOpen(true)}
+            aria-label={`Ver carrito: ${cartCount} productos, ${currency.format(cartTotal)}`}
+            className="mx-auto flex min-h-20 w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-white sm:px-7"
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="relative grid size-12 shrink-0 place-items-center rounded-xl bg-white/15">
+                <ShoppingCart className="size-6" />
+                {cartCount > 0 ? (
+                  <span className="absolute -top-1.5 -right-1.5 grid min-w-5 place-items-center rounded-full bg-[#f5d7ed] px-1 text-[11px] font-bold text-[#5c1b57]">
+                    {cartCount}
+                  </span>
+                ) : null}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[10px] font-semibold tracking-[0.16em] text-[#ebc9e5] uppercase">
+                  Total referencial
+                </span>
+                <span className="block truncate text-lg font-bold">
+                  {currency.format(cartTotal)}
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#5c1b57] shadow-sm">
+              Ver carrito
+            </span>
+          </button>
+        </div>
+      ) : null}
       {cartOpen ? (
         <div
-          className="fixed inset-0 z-50 flex justify-end bg-black/50"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setCartOpen(false);
-          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Carrito de ${branch.name}`}
+          className="catalog-cart-open fixed inset-0 z-50 bg-[#fcf9fc] text-[#2f1830]"
         >
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label="Carrito"
-            className="flex h-full w-full max-w-md flex-col bg-white p-5 shadow-2xl"
-          >
-            <div className="flex items-center justify-between border-b pb-4">
-              <h2 className="text-xl font-semibold">
-                Carrito de {branch.name}
-              </h2>
+          <div className="mx-auto flex h-[100dvh] w-full max-w-5xl flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[#eadce8] bg-white px-4 py-4 sm:px-8">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold tracking-[0.16em] text-[#8c2f7f] uppercase">
+                  {branch.name}
+                </p>
+                <h2 className="mt-1 text-xl font-semibold sm:text-2xl">
+                  Tu carrito{" "}
+                  <span className="text-base font-normal text-[#816f7e]">
+                    ({cartCount})
+                  </span>
+                </h2>
+              </div>
               <button
+                ref={cartCloseRef}
                 type="button"
                 onClick={() => setCartOpen(false)}
                 aria-label="Cerrar carrito"
-                className="p-2"
+                className="grid size-11 shrink-0 place-items-center rounded-full border border-[#d9c2d6] text-[#5c1b57] transition hover:bg-[#f4e9f1] focus-visible:outline-2 focus-visible:outline-[#8c2f7f]"
               >
                 <X className="size-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
               {cart.length ? (
-                cart.map(({ product, quantity }) => (
-                  <div
-                    key={product.id}
-                    className="flex items-start justify-between gap-3 border-b py-4"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-semibold">{product.name}</p>
-                      <p className="text-sm text-[#71847c]">
-                        {currency.format(product.price)} /{" "}
-                        {unitNames[product.unit] || product.unit}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => changeQuantity(product.id, 0)}
-                        className="mt-2 text-xs text-red-700"
+                <div className="space-y-3">
+                  {cart.map(({ product, quantity }) => {
+                    const step = product.unit === "unit" ? 1 : 0.1;
+                    return (
+                      <article
+                        key={product.id}
+                        className="flex gap-3 rounded-2xl border border-[#eadce8] bg-white p-3 shadow-[0_6px_22px_rgba(75,28,70,0.04)] sm:gap-5 sm:p-4"
                       >
-                        Quitar
-                      </button>
-                    </div>
-                    <label className="text-xs text-[#71847c]">
-                      Cantidad
-                      <input
-                        type="number"
-                        min={product.unit === "unit" ? "1" : "0.1"}
-                        step={product.unit === "unit" ? "1" : "0.1"}
-                        value={quantity}
-                        onChange={(event) =>
-                          changeQuantity(product.id, event.target.value)
-                        }
-                        className="mt-1 block h-10 w-20 rounded-md border px-2 text-base"
-                      />
-                    </label>
-                  </div>
-                ))
+                        <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#f4e9f1] text-[#8c2f7f] sm:size-24">
+                          {product.imageUrl ? (
+                            <img
+                              src={product.imageUrl}
+                              alt=""
+                              className="size-full object-cover"
+                            />
+                          ) : (
+                            <Package className="size-8" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 leading-5 font-semibold sm:text-lg">
+                            {product.name}
+                          </p>
+                          <p className="mt-1 text-xs text-[#816f7e]">
+                            Ref. {product.sku} ·{" "}
+                            {currency.format(product.price)} /{" "}
+                            {unitNames[product.unit] || product.unit}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center rounded-xl border border-[#d9c2d6]">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  changeQuantity(
+                                    product.id,
+                                    Number((quantity - step).toFixed(2)),
+                                  )
+                                }
+                                aria-label={`Restar ${product.name}`}
+                                className="grid size-9 place-items-center text-[#8c2f7f] hover:bg-[#f4e9f1]"
+                              >
+                                <Minus className="size-4" />
+                              </button>
+                              <input
+                                type="number"
+                                aria-label={`Cantidad de ${product.name}`}
+                                min={step}
+                                step={step}
+                                value={quantity}
+                                onChange={(event) =>
+                                  changeQuantity(product.id, event.target.value)
+                                }
+                                className="w-12 border-x border-[#eadce8] bg-white text-center text-sm font-semibold outline-none sm:w-16"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  changeQuantity(
+                                    product.id,
+                                    Number((quantity + step).toFixed(2)),
+                                  )
+                                }
+                                aria-label={`Sumar ${product.name}`}
+                                className="grid size-9 place-items-center text-[#8c2f7f] hover:bg-[#f4e9f1]"
+                              >
+                                <Plus className="size-4" />
+                              </button>
+                            </div>
+                            <p className="text-sm font-bold text-[#5c1b57]">
+                              {currency.format(product.price * quantity)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => changeQuantity(product.id, 0)}
+                            className="mt-2 text-xs font-medium text-[#8c2f7f] underline underline-offset-2"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               ) : (
-                <p className="py-12 text-center text-sm text-[#71847c]">
-                  Tu carrito está vacío.
-                </p>
+                <div className="mx-auto grid max-w-md justify-items-center rounded-2xl border border-[#eadce8] bg-white px-6 py-14 text-center">
+                  <span className="grid size-16 place-items-center rounded-2xl bg-[#f4e9f1] text-[#8c2f7f]">
+                    <ShoppingCart className="size-8" />
+                  </span>
+                  <h3 className="mt-5 text-lg font-semibold">
+                    Tu carrito está vacío
+                  </h3>
+                  <p className="mt-2 text-sm text-[#816f7e]">
+                    Agrega productos del catálogo para consultarlos por
+                    WhatsApp.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setCartOpen(false)}
+                    className="mt-5 rounded-xl bg-[#8c2f7f] px-5 py-3 text-sm font-semibold text-white"
+                  >
+                    Seguir explorando
+                  </button>
+                </div>
               )}
             </div>
-            <div className="border-t pt-4">
-              <p className="flex justify-between text-lg font-semibold">
+            <div className="shrink-0 border-t border-[#eadce8] bg-white px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-10px_28px_rgba(47,24,48,0.07)] sm:px-8">
+              <div className="flex items-center justify-between gap-3 text-lg font-semibold">
                 <span>Total referencial</span>
-                <span>
-                  {currency.format(
-                    cart.reduce(
-                      (sum, item) => sum + item.product.price * item.quantity,
-                      0,
-                    ),
-                  )}
+                <span className="text-[#5c1b57]">
+                  {currency.format(cartTotal)}
                 </span>
-              </p>
-              <p className="mt-2 text-xs text-[#71847c]">
-                El cajero confirmará el stock y realizará la venta manualmente.
+              </div>
+              <p className="mt-1 text-xs text-[#816f7e]">
+                El cajero confirma stock y precio, y completa la venta
+                manualmente.
               </p>
               {whatsappReady && cart.length ? (
                 <a
                   href={whatsappLink(branch.whatsappNumber, branch, cart)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-4 flex h-12 items-center justify-center rounded-xl bg-[#25845a] font-semibold text-white"
+                  className="mt-4 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#8c2f7f] px-5 text-sm font-semibold text-white transition hover:bg-[#702368]"
                 >
-                  Comprar carrito por WhatsApp
+                  <MessageCircle className="size-5" /> Comprar por WhatsApp
                 </a>
               ) : (
-                <p className="mt-4 rounded-xl bg-[#eef3ee] p-3 text-center text-sm text-[#687e70]">
-                  {whatsappReady
-                    ? "Agrega productos para continuar."
-                    : "WhatsApp aún no configurado para esta sucursal."}
-                </p>
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#c8a9c3] px-5 text-sm font-semibold text-white"
+                  >
+                    <MessageCircle className="size-5" /> Comprar por WhatsApp
+                  </button>
+                  {!whatsappReady ? (
+                    <p className="mt-2 text-center text-xs text-[#816f7e]">
+                      WhatsApp aún no configurado para esta sucursal.
+                    </p>
+                  ) : null}
+                </>
               )}
             </div>
-          </aside>
+          </div>
         </div>
       ) : null}
     </main>

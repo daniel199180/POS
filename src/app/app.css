@@ -11,3 +11,18 @@ html {
 body {
   min-height: 100%;
 }
+
+@keyframes catalog-cart-open {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .catalog-cart-open {
+    animation: catalog-cart-open 280ms ease-out both;
+  }
+}
