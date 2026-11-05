@@ -36,30 +36,12 @@ function toPublicBranch(document) {
   };
 }
 
-export async function listPublicCatalogBranches(userAgent = "") {
-  const { databases } = createAdminClient(userAgent);
-  const branches = await readReportDocuments(databases, collections.branches, [
-    Query.equal("isActive", true),
-    Query.orderAsc("$id"),
-    Query.select(["$id", "code", "name", "city"]),
-  ]);
-  return branches
-    .filter((branch) =>
-      CATALOG_BRANCH_CODES.has(String(branch.code).toUpperCase()),
-    )
-    .map(toPublicBranch)
-    .sort((left, right) => left.name.localeCompare(right.name, "es"));
-}
-
 export async function getPublicCatalog(code, userAgent = "") {
   const normalizedCode = normalizeCode(code);
-  const branches = await listPublicCatalogBranches(userAgent);
-  const branch = branches.find(
-    (item) => item.code.toUpperCase() === normalizedCode,
-  );
-  if (!branch) throw notFound();
-
   const { databases } = createAdminClient(userAgent);
+  const branchDocument = await findActiveBranch(databases, normalizedCode);
+  if (!branchDocument) throw notFound();
+  const branch = toPublicBranch(branchDocument);
   const [stocks, categories] = await Promise.all([
     readReportDocuments(databases, collections.stock, [
       Query.equal("branchId", branch.id),
@@ -109,7 +91,6 @@ export async function getPublicCatalog(code, userAgent = "") {
   });
   return {
     branch,
-    branches,
     products: publicProducts,
     categories: [
       ...new Map(
@@ -124,20 +105,24 @@ export async function getPublicCatalog(code, userAgent = "") {
   };
 }
 
-export async function getPublicCatalogImage(code, productId, userAgent = "") {
-  const normalizedCode = normalizeCode(code);
-  if (!/^[A-Za-z0-9._-]{1,36}$/.test(String(productId || ""))) throw notFound();
-  const { databases, storage } = createAdminClient(userAgent);
-  const branchResult = await databases.listDocuments({
+async function findActiveBranch(databases, code) {
+  const result = await databases.listDocuments({
     databaseId,
     collectionId: collections.branches,
     queries: [
-      Query.equal("code", normalizedCode),
+      Query.equal("code", code),
       Query.equal("isActive", true),
       Query.limit(1),
     ],
   });
-  const branch = branchResult.documents[0];
+  return result.documents[0] || null;
+}
+
+export async function getPublicCatalogImage(code, productId, userAgent = "") {
+  const normalizedCode = normalizeCode(code);
+  if (!/^[A-Za-z0-9._-]{1,36}$/.test(String(productId || ""))) throw notFound();
+  const { databases, storage } = createAdminClient(userAgent);
+  const branch = await findActiveBranch(databases, normalizedCode);
   if (!branch) throw notFound();
   let product;
   try {

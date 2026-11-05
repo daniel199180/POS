@@ -1,10 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Check,
   ChevronDown,
   MapPin,
@@ -12,10 +10,8 @@ import {
   RefreshCw,
   Search,
   Share2,
-  Store,
   X,
 } from "lucide-react";
-import { publicCatalogPath } from "@/lib/pos/public-catalog-core";
 
 const currency = new Intl.NumberFormat("es-BO", {
   style: "currency",
@@ -54,14 +50,10 @@ function ProductImage({ product }) {
   );
 }
 
-export default function CatalogClient({
-  branch,
-  branches,
-  products,
-  categories,
-}) {
+export default function CatalogClient({ branch, products, categories }) {
   const router = useRouter();
   const [isRefreshing, startRefresh] = useTransition();
+  const [logoFailed, setLogoFailed] = useState(false);
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [order, setOrder] = useState("name");
@@ -102,17 +94,28 @@ export default function CatalogClient({
     <main className="min-h-screen bg-[#f7f7f2] text-[#172b32]">
       <div className="mx-auto max-w-7xl px-4 pb-20 sm:px-7 lg:px-10">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dbe2df] py-5 sm:py-7">
-          <Link
-            href="/catalogo"
-            className="flex items-center gap-3 text-[#17363e]"
-          >
-            <span className="grid size-10 place-items-center rounded-2xl bg-[#14343d] text-white">
-              <Store className="size-5" />
-            </span>
-            <span className="text-sm font-bold tracking-[0.16em] uppercase">
-              Catálogos
-            </span>
-          </Link>
+          <div className="flex min-w-0 items-center gap-3 text-[#17363e]">
+            {logoFailed ? (
+              <span className="grid size-12 place-items-center rounded-xl bg-[#14343d] text-xs font-bold text-white">
+                POS
+              </span>
+            ) : (
+              <img
+                src="/api/public/catalog/logo"
+                alt="Logo del POS"
+                onError={() => setLogoFailed(true)}
+                className="size-12 shrink-0 object-contain sm:size-14"
+              />
+            )}
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold tracking-[0.18em] text-[#6b8a7a] uppercase">
+                Catálogo
+              </p>
+              <p className="truncate text-sm font-semibold sm:text-base">
+                {branch.name}
+              </p>
+            </div>
+          </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
@@ -139,78 +142,31 @@ export default function CatalogClient({
               )}
               {copied ? "Enlace copiado" : "Compartir"}
             </button>
-            <Link
-              href="/catalogo"
-              className="hidden h-10 items-center gap-2 rounded-full px-3 text-xs font-semibold text-[#647875] hover:text-[#14343d] sm:inline-flex"
-            >
-              <ArrowLeft className="size-4" /> Todas las sucursales
-            </Link>
           </div>
         </header>
 
-        <section className="relative mt-6 overflow-hidden rounded-[2rem] bg-[#14343d] px-6 py-9 text-white sm:px-10 sm:py-11 lg:px-14 lg:py-12">
-          <div
-            className="absolute -top-32 -right-20 size-96 rounded-full bg-[#65aa83]/15 blur-3xl"
-            aria-hidden="true"
-          />
-          <div
-            className="absolute right-1/4 -bottom-44 size-96 rounded-full bg-[#e3c980]/10 blur-3xl"
-            aria-hidden="true"
-          />
-          <div className="relative max-w-3xl">
-            <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] uppercase">
-              <span className="size-2 rounded-full bg-[#a6e2ad]" /> Catálogo en
-              línea
-            </p>
-            <h1 className="mt-6 text-4xl leading-[1.08] font-semibold tracking-tight sm:text-5xl lg:text-6xl">
-              {branch.name}
-            </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-[#d0e0dc] sm:text-lg">
-              Descubre los productos disponibles en nuestra sucursal de{" "}
-              {branch.city}.
-            </p>
-            <p className="mt-6 inline-flex items-center gap-2 text-sm text-[#d0e0dc]">
-              <MapPin className="size-4 text-[#a6d9ad]" /> {branch.city}
-            </p>
-          </div>
-          <div className="relative mt-9 flex flex-wrap items-center gap-4 border-t border-white/15 pt-6 text-sm text-[#c7d8d3]">
-            <span className="font-semibold text-white">
-              {products.length}{" "}
-              {products.length === 1
-                ? "producto disponible"
-                : "productos disponibles"}
-            </span>
-            <span className="hidden size-1 rounded-full bg-white/35 sm:block" />
-            <span>Precios en bolivianos</span>
-          </div>
+        <section className="mt-10 border-b border-[#dbe2df] pb-8 sm:mt-14 sm:pb-10">
+          <p className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.18em] text-[#4b8a69] uppercase">
+            <MapPin className="size-4" /> {branch.city}
+          </p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
+            Catálogo de {branch.name}
+          </h1>
+          <p className="mt-4 text-sm text-[#657574] sm:text-base">
+            {products.length}{" "}
+            {products.length === 1
+              ? "producto disponible"
+              : "productos disponibles"}
+            {" · "}Precios en bolivianos
+          </p>
         </section>
 
-        <nav
-          aria-label="Elegir sucursal"
-          className="mt-7 flex gap-2 overflow-x-auto pb-2"
-        >
-          {branches.map((item) => (
-            <Link
-              key={item.id}
-              href={publicCatalogPath(item.code)}
-              prefetch={false}
-              aria-current={item.id === branch.id ? "page" : undefined}
-              className={`shrink-0 rounded-full border px-4 py-2.5 text-xs font-semibold transition sm:text-sm ${item.id === branch.id ? "border-[#14343d] bg-[#14343d] text-white" : "border-[#d8e2dd] bg-white text-[#506c63] hover:border-[#77a78c]"}`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-
-        <section className="mt-11" aria-labelledby="products-heading">
+        <section className="mt-9" aria-labelledby="products-heading">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs font-bold tracking-[0.22em] text-[#4b8a69] uppercase">
-                En esta sucursal
-              </p>
               <h2
                 id="products-heading"
-                className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl"
+                className="text-2xl font-semibold tracking-tight sm:text-3xl"
               >
                 Productos disponibles
               </h2>
