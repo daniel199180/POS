@@ -22,6 +22,9 @@ const currency = new Intl.NumberFormat("es-BO", {
   currency: "BOB",
   maximumFractionDigits: 2,
 });
+const stockNumber = new Intl.NumberFormat("es-BO", {
+  maximumFractionDigits: 2,
+});
 
 const unitNames = {
   unit: "unidad",
@@ -43,12 +46,16 @@ function ProductImage({ product }) {
           className="size-full object-cover transition duration-500 group-hover:scale-105"
         />
       ) : (
-        <div className="grid size-24 place-items-center rounded-[2rem] border border-white/70 bg-white/40 text-[#a46a9c] shadow-[0_12px_40px_rgba(31,80,65,0.06)]">
-          <Package className="size-11 stroke-[1.25]" />
+        <div className="grid size-14 place-items-center rounded-2xl border border-white/70 bg-white/40 text-[#a46a9c] shadow-[0_12px_40px_rgba(75,28,70,0.06)] sm:size-24 sm:rounded-[2rem]">
+          <Package className="size-8 stroke-[1.25] sm:size-11" />
         </div>
       )}
-      <span className="absolute top-4 left-4 rounded-full border border-[#ddb9d6] bg-white/90 px-3 py-1.5 text-[11px] font-bold tracking-wide text-[#79276d] backdrop-blur-sm">
-        Disponible
+      <span
+        className={`absolute top-2 left-2 max-w-[calc(100%-1rem)] rounded-full border px-2 py-1 text-[10px] leading-tight font-bold backdrop-blur-sm sm:top-4 sm:left-4 sm:px-3 sm:py-1.5 sm:text-[11px] ${product.stockAvailable > 0 ? "border-[#ddb9d6] bg-white/90 text-[#79276d]" : "border-[#e8c2a6] bg-[#fff5ec]/95 text-[#854c2d]"}`}
+      >
+        {product.stockAvailable > 0
+          ? `Stock disponible: ${stockNumber.format(product.stockAvailable)}`
+          : "Stock a confirmar"}
       </span>
     </div>
   );
@@ -300,8 +307,8 @@ export default function CatalogClient({
           <p className="mt-4 text-sm text-[#7d6a7b] sm:text-base">
             {initialTotal}{" "}
             {initialTotal === 1
-              ? "producto disponible"
-              : "productos disponibles"}
+              ? "producto en catálogo"
+              : "productos en catálogo"}
             {" · "}Precios en bolivianos
           </p>
         </section>
@@ -313,7 +320,7 @@ export default function CatalogClient({
                 id="products-heading"
                 className="text-2xl font-semibold tracking-tight sm:text-3xl"
               >
-                Productos disponibles
+                Productos
               </h2>
             </div>
             <span className="text-sm text-[#816e7f]">{total} resultados</span>
@@ -376,44 +383,41 @@ export default function CatalogClient({
           ) : null}
 
           {products.length ? (
-            <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
               {products.map((product) => (
                 <article
                   key={product.id}
-                  className="group overflow-hidden rounded-[1.4rem] border border-[#eadce8] bg-white shadow-[0_7px_28px_rgba(20,52,61,0.04)] transition hover:-translate-y-1 hover:shadow-[0_18px_42px_rgba(20,52,61,0.1)]"
+                  className="group flex flex-col overflow-hidden rounded-[1.2rem] border border-[#eadce8] bg-white shadow-[0_7px_28px_rgba(75,28,70,0.04)] transition hover:-translate-y-1 hover:shadow-[0_18px_42px_rgba(75,28,70,0.1)] sm:rounded-[1.4rem]"
                 >
                   <ProductImage product={product} />
-                  <div className="p-5">
-                    <p className="text-[11px] font-bold tracking-[0.12em] text-[#8c2f7f] uppercase">
+                  <div className="flex flex-1 flex-col p-3 sm:p-5">
+                    <p className="truncate text-[10px] font-bold tracking-[0.08em] text-[#8c2f7f] uppercase sm:text-[11px] sm:tracking-[0.12em]">
                       {product.categoryId
                         ? product.categoryName
                         : `Ref. ${product.sku}`}
                     </p>
-                    <h3 className="mt-2 min-h-12 text-lg leading-6 font-semibold tracking-tight">
+                    <h3 className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 font-semibold tracking-tight sm:mt-2 sm:min-h-12 sm:text-lg sm:leading-6">
                       {product.name}
                     </h3>
-                    {product.description ? (
-                      <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-[#816f7e]">
-                        {product.description}
-                      </p>
-                    ) : (
-                      <div className="min-h-10" />
-                    )}
-                    <div className="mt-4 border-t border-[#f3eaf1] pt-4">
-                      <p className="text-xl font-bold tracking-tight text-[#4d2148]">
+                    <div className="mt-auto border-t border-[#f3eaf1] pt-3 sm:pt-4">
+                      <p className="text-base font-bold tracking-tight text-[#4d2148] sm:text-xl">
                         {currency.format(product.price)}
                       </p>
-                      <p className="mt-1 text-xs text-[#9b8697]">
+                      <p className="mt-0.5 text-[11px] text-[#9b8697] sm:mt-1 sm:text-xs">
                         por {unitNames[product.unit] || product.unit}
                       </p>
                     </div>
-                    <div className="mt-4 grid gap-2">
+                    <div className="mt-3 grid gap-2 sm:mt-4">
                       <button
                         type="button"
                         onClick={() => addToCart(product)}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#ba84af] text-sm font-semibold text-[#742669]"
+                        className="inline-flex min-h-9 items-center justify-center gap-1 rounded-xl border border-[#ba84af] px-1 text-[11px] font-semibold text-[#742669] sm:h-10 sm:gap-2 sm:text-sm"
                       >
-                        <Plus className="size-4" /> Agregar al carrito
+                        <Plus className="size-3.5 sm:size-4" />
+                        <span className="sm:hidden">Agregar</span>
+                        <span className="hidden sm:inline">
+                          Agregar al carrito
+                        </span>
                       </button>
                       {whatsappReady ? (
                         <a
@@ -422,9 +426,14 @@ export default function CatalogClient({
                           ])}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex h-10 items-center justify-center rounded-xl bg-[#8c2f7f] text-sm font-semibold text-white"
+                          className="inline-flex min-h-9 items-center justify-center gap-1 rounded-xl bg-[#8c2f7f] px-1 text-[11px] font-semibold text-white sm:h-10 sm:text-sm"
+                          aria-label={`Comprar ${product.name} por WhatsApp`}
                         >
-                          Comprar por WhatsApp
+                          <MessageCircle className="size-3.5 sm:hidden" />
+                          <span className="sm:hidden">WhatsApp</span>
+                          <span className="hidden sm:inline">
+                            Comprar por WhatsApp
+                          </span>
                         </a>
                       ) : (
                         <span className="text-center text-xs text-[#9a8796]">

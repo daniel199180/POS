@@ -36,6 +36,7 @@ const products = [
     originBranchId: "b2",
   },
   { $id: "p4", name: "Regla", price: 5, isActive: false, originBranchId: "b1" },
+  { $id: "p5", name: "Tijera", price: 6, isActive: true, originBranchId: "b1" },
 ];
 const stocks = [
   { productId: "p1", branchId: "b1", quantity: 8 },
@@ -45,14 +46,14 @@ const stocks = [
   { productId: "p2", branchId: "b2", quantity: 20 },
 ];
 
-test("public catalog shows only active, available products from the branch of origin", () => {
+test("public catalog shows active branch products with available and unconfirmed stock", () => {
   const result = buildPublicCatalogProducts({
     branch,
     products,
     stocks,
     categories: [{ $id: "c1", name: "Papelería", isActive: true }],
   });
-  assert.equal(result.length, 1);
+  assert.equal(result.length, 3);
   assert.deepEqual(result[0], {
     id: "p1",
     name: "Cuaderno",
@@ -60,10 +61,15 @@ test("public catalog shows only active, available products from the branch of or
     sku: "CB-001",
     price: 15,
     unit: "unit",
+    stockAvailable: 8,
     categoryId: "c1",
     categoryName: "Papelería",
     imageUrl: "/api/public/catalog/CBB/products/p1/image?v=image1",
   });
+  assert.equal(result[1].id, "p2");
+  assert.equal(result[1].stockAvailable, 0);
+  assert.equal(result[2].id, "p5");
+  assert.equal(result[2].stockAvailable, 0);
   assert.equal("cost" in result[0], false);
   assert.equal("quantity" in result[0], false);
 });
@@ -81,7 +87,7 @@ test("disabled categories become uncategorized and branch links use stable codes
   assert.equal(publicCatalogPath("cbb"), "/catalogo/CBB");
 });
 
-test("private product images require an active matching branch, product and positive stock", () => {
+test("private product images require an active product owned by the branch, even without stock", () => {
   const activeBranch = { $id: "b1", isActive: true };
   const product = {
     $id: "p1",
@@ -89,44 +95,24 @@ test("private product images require an active matching branch, product and posi
     isActive: true,
     imageFileId: "image1",
   };
-  const stock = { productId: "p1", branchId: "b1", quantity: 2 };
-  assert.equal(isPublicCatalogImageAllowed(activeBranch, product, stock), true);
+  assert.equal(isPublicCatalogImageAllowed(activeBranch, product), true);
   assert.equal(
-    isPublicCatalogImageAllowed(activeBranch, product, {
-      ...stock,
-      quantity: 0,
+    isPublicCatalogImageAllowed(activeBranch, {
+      ...product,
+      originBranchId: "b2",
     }),
     false,
   );
   assert.equal(
-    isPublicCatalogImageAllowed(
-      activeBranch,
-      { ...product, originBranchId: "b2" },
-      stock,
-    ),
+    isPublicCatalogImageAllowed(activeBranch, { ...product, isActive: false }),
     false,
   );
   assert.equal(
-    isPublicCatalogImageAllowed(
-      activeBranch,
-      { ...product, isActive: false },
-      stock,
-    ),
+    isPublicCatalogImageAllowed({ ...activeBranch, isActive: false }, product),
     false,
   );
   assert.equal(
-    isPublicCatalogImageAllowed(
-      { ...activeBranch, isActive: false },
-      product,
-      stock,
-    ),
-    false,
-  );
-  assert.equal(
-    isPublicCatalogImageAllowed(activeBranch, product, {
-      ...stock,
-      productId: "p2",
-    }),
+    isPublicCatalogImageAllowed(activeBranch, { ...product, imageFileId: "" }),
     false,
   );
 });
@@ -144,6 +130,7 @@ test("catalog pages contain at most 20 products and preserve search and sort", (
   const second = paginatePublicCatalogProducts(many, { page: 2 });
   const third = paginatePublicCatalogProducts(many, { page: 3 });
   assert.equal(first.products.length, 20);
+  assert.equal("description" in first.products[0], false);
   assert.equal(second.products.length, 20);
   assert.equal(third.products.length, 5);
   assert.equal(third.hasMore, false);

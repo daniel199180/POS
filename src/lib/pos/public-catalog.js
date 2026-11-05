@@ -56,35 +56,22 @@ export async function getPublicCatalog(code, userAgent = "", filters = {}) {
       Query.select(["$id", "name", "isActive"]),
     ]),
   ]);
-  const availableIds = [
-    ...new Set(
-      stocks
-        .filter((stock) => Number(stock.quantity) > 0)
-        .map((stock) => stock.productId),
-    ),
-  ];
-  const products = [];
-  for (let offset = 0; offset < availableIds.length; offset += 100) {
-    products.push(
-      ...(await readReportDocuments(databases, collections.products, [
-        Query.equal("$id", availableIds.slice(offset, offset + 100)),
-        Query.equal("isActive", true),
-        Query.orderAsc("$id"),
-        Query.select([
-          "$id",
-          "name",
-          "description",
-          "sku",
-          "price",
-          "unit",
-          "categoryId",
-          "imageFileId",
-          "isActive",
-          "originBranchId",
-        ]),
-      ])),
-    );
-  }
+  const products = await readReportDocuments(databases, collections.products, [
+    Query.equal("isActive", true),
+    Query.orderAsc("$id"),
+    Query.select([
+      "$id",
+      "name",
+      "description",
+      "sku",
+      "price",
+      "unit",
+      "categoryId",
+      "imageFileId",
+      "isActive",
+      "originBranchId",
+    ]),
+  ]);
   const publicProducts = buildPublicCatalogProducts({
     branch,
     products,
@@ -137,17 +124,7 @@ export async function getPublicCatalogImage(code, productId, userAgent = "") {
     if (error?.code === 404) throw notFound();
     throw error;
   }
-  const stock = await databases.listDocuments({
-    databaseId,
-    collectionId: collections.stock,
-    queries: [
-      Query.equal("productId", productId),
-      Query.equal("branchId", branch.$id),
-      Query.limit(1),
-    ],
-  });
-  if (!isPublicCatalogImageAllowed(branch, product, stock.documents[0]))
-    throw notFound();
+  if (!isPublicCatalogImageAllowed(branch, product)) throw notFound();
   const file = await storage.getFile({
     bucketId: storageBucket,
     fileId: product.imageFileId,

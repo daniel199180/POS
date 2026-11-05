@@ -5,15 +5,12 @@ export function publicCatalogPath(code) {
   return `/catalogo/${encodeURIComponent(String(code).toUpperCase())}`;
 }
 
-export function isPublicCatalogImageAllowed(branch, product, stock) {
+export function isPublicCatalogImageAllowed(branch, product) {
   return (
     branch?.isActive === true &&
     product?.isActive === true &&
     product.originBranchId === branch.$id &&
-    Boolean(product.imageFileId) &&
-    stock?.branchId === branch.$id &&
-    stock?.productId === product.$id &&
-    Number(stock.quantity) > 0
+    Boolean(product.imageFileId)
   );
 }
 
@@ -23,12 +20,13 @@ export function buildPublicCatalogProducts({
   stocks,
   categories,
 }) {
-  const available = new Set(
+  const stockByProduct = new Map(
     stocks
-      .filter(
-        (stock) => stock.branchId === branch.id && Number(stock.quantity) > 0,
-      )
-      .map((stock) => stock.productId),
+      .filter((stock) => stock.branchId === branch.id)
+      .map((stock) => [
+        stock.productId,
+        Math.max(0, Number(stock.quantity) || 0),
+      ]),
   );
   const categoryNames = new Map(
     categories
@@ -39,9 +37,7 @@ export function buildPublicCatalogProducts({
   return products
     .filter(
       (product) =>
-        product.isActive === true &&
-        product.originBranchId === branch.id &&
-        available.has(product.$id),
+        product.isActive === true && product.originBranchId === branch.id,
     )
     .map((product) => ({
       id: product.$id,
@@ -50,6 +46,7 @@ export function buildPublicCatalogProducts({
       sku: product.sku || "",
       price: Number(product.price) || 0,
       unit: product.unit || "unit",
+      stockAvailable: stockByProduct.get(product.$id) || 0,
       categoryId: categoryNames.has(product.categoryId)
         ? product.categoryId
         : "",
@@ -90,7 +87,9 @@ export function paginatePublicCatalogProducts(products, filters = {}) {
   }
   const offset = (page - 1) * 20;
   return {
-    products: filteredProducts.slice(offset, offset + 20),
+    products: filteredProducts
+      .slice(offset, offset + 20)
+      .map(({ description, ...product }) => product),
     total: filteredProducts.length,
     hasMore: offset + 20 < filteredProducts.length,
     page,

@@ -13,7 +13,7 @@ export async function generateMetadata({ params }) {
     const { branch } = await loadCatalog(code);
     return {
       title: `Catálogo de ${branch.name} | POS`,
-      description: `Consulta los productos disponibles en ${branch.name}, ${branch.city}.`,
+      description: `Consulta productos y stock de ${branch.name}, ${branch.city}.`,
     };
   } catch (error) {
     if (error.status === 404) {
