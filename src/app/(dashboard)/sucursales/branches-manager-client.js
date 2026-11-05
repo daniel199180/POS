@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Edit3, Search, Store, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { Edit3, ExternalLink, Search, Store, Trash2, X } from "lucide-react";
+import {
+  CATALOG_BRANCH_CODES,
+  publicCatalogPath,
+} from "@/lib/pos/public-catalog-core";
 
 const emptyForm = {
   id: "",
@@ -198,7 +203,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
         <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
           <div className="overflow-x-auto">
             <div className="min-w-[760px]">
-              <div className="grid grid-cols-[minmax(220px,1fr)_100px_150px_130px_120px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
+              <div className="grid grid-cols-[minmax(220px,1fr)_100px_150px_130px_160px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
                 <span>Sucursal</span>
                 <span>Codigo</span>
                 <span>Ciudad</span>
@@ -210,7 +215,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
                 {branches.map((branch) => (
                   <div
                     key={branch.id}
-                    className="grid grid-cols-[minmax(220px,1fr)_100px_150px_130px_120px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
+                    className="grid grid-cols-[minmax(220px,1fr)_100px_150px_130px_160px] items-center border-b border-neutral-800 px-4 py-3 text-sm last:border-b-0 hover:bg-neutral-800/50"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-medium text-neutral-100">
@@ -234,6 +239,21 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
                       {branch.isActive ? "Activa" : "Inactiva"}
                     </span>
                     <div className="flex justify-end gap-2">
+                      {branch.isActive &&
+                      CATALOG_BRANCH_CODES.has(
+                        String(branch.code).toUpperCase(),
+                      ) ? (
+                        <Link
+                          href={publicCatalogPath(branch.code)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="grid size-9 place-items-center rounded-md border border-neutral-700 text-neutral-300 transition hover:border-emerald-500 hover:text-emerald-200"
+                          title="Abrir catálogo público"
+                          aria-label={`Abrir catálogo público de ${branch.name}`}
+                        >
+                          <ExternalLink className="size-4" />
+                        </Link>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => editBranch(branch)}
