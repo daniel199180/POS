@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUserContext } from "@/lib/pos/auth";
 import { listStockMovements } from "@/lib/pos/inventory";
 import { listBranches, listProducts } from "@/lib/pos/management";
+import { listCategories } from "@/lib/pos/categories";
 
 export default async function ProductsPage() {
   const context = await getCurrentUserContext();
@@ -15,10 +16,13 @@ export default async function ProductsPage() {
     redirect("/");
   }
 
-  const [branches, products, stockMovements] = await Promise.all([
+  const [branches, products, stockMovements, categories] = await Promise.all([
     listBranches(context),
     listProducts(context),
     context.isAdmin ? listStockMovements(context) : [],
+    context.canCreateProducts || context.canManageCatalog
+      ? listCategories(context)
+      : [],
   ]);
 
   return (
@@ -26,6 +30,8 @@ export default async function ProductsPage() {
       branches={branches}
       initialProducts={products}
       initialStockMovements={stockMovements}
+      initialCategories={categories}
+      allowedBranchIds={context.allowedBranchIds}
       canManage={context.canManageCatalog}
       canCreateProducts={context.canCreateProducts}
       canIncreaseInventory={context.canIncreaseInventory}

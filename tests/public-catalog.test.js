@@ -4,7 +4,13 @@ import {
   buildPublicCatalogProducts,
   isPublicCatalogImageAllowed,
   publicCatalogPath,
+  paginatePublicCatalogProducts,
 } from "../src/lib/pos/public-catalog-core.js";
+import sharp from "sharp";
+import {
+  canEditProductImage,
+  compressProductImage,
+} from "../src/lib/pos/product-images.js";
 
 const branch = { id: "b1", code: "CBB", name: "Cochabamba" };
 const products = [
@@ -56,7 +62,7 @@ test("public catalog shows only active, available products from the branch of or
     unit: "unit",
     categoryId: "c1",
     categoryName: "Papelería",
-    imageUrl: "/api/public/catalog/CBB/products/p1/image",
+    imageUrl: "/api/public/catalog/CBB/products/p1/image?v=image1",
   });
   assert.equal("cost" in result[0], false);
   assert.equal("quantity" in result[0], false);
@@ -121,6 +127,71 @@ test("private product images require an active matching branch, product and posi
       ...stock,
       productId: "p2",
     }),
+    false,
+  );
+});
+
+test("catalog pages contain at most 20 products and preserve search and sort", () => {
+  const many = Array.from({ length: 45 }, (_, index) => ({
+    id: `p${index}`,
+    name: `Artículo ${String(index).padStart(2, "0")}`,
+    description: "",
+    sku: `SKU${index}`,
+    price: index,
+    categoryId: index < 25 ? "c1" : "c2",
+  }));
+  const first = paginatePublicCatalogProducts(many);
+  const second = paginatePublicCatalogProducts(many, { page: 2 });
+  const third = paginatePublicCatalogProducts(many, { page: 3 });
+  assert.equal(first.products.length, 20);
+  assert.equal(second.products.length, 20);
+  assert.equal(third.products.length, 5);
+  assert.equal(third.hasMore, false);
+  assert.equal(
+    new Set(
+      [...first.products, ...second.products, ...third.products].map(
+        (item) => item.id,
+      ),
+    ).size,
+    45,
+  );
+  const filtered = paginatePublicCatalogProducts(many, {
+    categoryId: "c1",
+    search: "artículo",
+    sort: "priceDesc",
+  });
+  assert.equal(filtered.total, 25);
+  assert.equal(filtered.products[0].price, 24);
+});
+
+test("product photos are compressed to small WebP and scoped to authorized branches", async () => {
+  const png = await sharp({
+    create: { width: 1600, height: 1200, channels: 3, background: "red" },
+  })
+    .png()
+    .toBuffer();
+  const webp = await compressProductImage({
+    type: "image/png",
+    size: png.length,
+    arrayBuffer: async () => png,
+  });
+  const metadata = await sharp(webp).metadata();
+  assert.equal(metadata.format, "webp");
+  assert.ok(metadata.width <= 900);
+  assert.ok(webp.length <= 220 * 1024);
+  const cashier = {
+    isAdmin: false,
+    canManageCatalog: false,
+    canCreateProducts: true,
+    allowedBranchIds: ["b1"],
+  };
+  assert.equal(canEditProductImage(cashier, { originBranchId: "b1" }), true);
+  assert.equal(canEditProductImage(cashier, { originBranchId: "b2" }), false);
+  assert.equal(
+    canEditProductImage(
+      { ...cashier, canCreateProducts: false },
+      { originBranchId: "b1" },
+    ),
     false,
   );
 });

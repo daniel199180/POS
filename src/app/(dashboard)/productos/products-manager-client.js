@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  Camera,
   Edit3,
   History,
   PackagePlus,
+  ImagePlus,
   Plus,
   Search,
   Trash2,
@@ -120,6 +122,8 @@ export default function ProductsManagerClient({
   branches,
   initialProducts,
   initialStockMovements = [],
+  initialCategories = [],
+  allowedBranchIds = [],
   canManage,
   canCreateProducts,
   canIncreaseInventory,
@@ -129,6 +133,10 @@ export default function ProductsManagerClient({
   const canCreateProduct = canManage || canCreateProducts;
   const skuBranches = useMemo(() => branches.filter(isSkuBranch), [branches]);
   const [products, setProducts] = useState(initialProducts);
+  const [categories, setCategories] = useState(initialCategories);
+  const [categoryName, setCategoryName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState("");
+  const [photoProduct, setPhotoProduct] = useState(null);
   const [stockMovements, setStockMovements] = useState(initialStockMovements);
   const [searchTerm, setSearchTerm] = useState("");
   const [form, setForm] = useState(() => createEmptyForm(branches));
@@ -150,6 +158,91 @@ export default function ProductsManagerClient({
     return branches.filter((branch) => allowed.has(branch.id));
   }, [branches, canManage, inventoryBranchIds]);
   const canUploadStock = canIncreaseInventory && inventoryBranches.length > 0;
+  const canUploadPhoto = (product) =>
+    (canManage || canCreateProducts) &&
+    (canManage || allowedBranchIds.includes(product.originBranchId));
+
+  async function uploadPhoto(file) {
+    if (!photoProduct || !file) return;
+    setIsSaving(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.set("image", file);
+      const response = await fetch(
+        `/api/pos/manage/products/${photoProduct.id}/image`,
+        { method: "POST", body: formData, credentials: "same-origin" },
+      );
+      const payload = await response.json();
+      if (!response.ok)
+        throw new Error(payload.message || "No se pudo subir la foto.");
+      await refreshProducts(searchTerm);
+      setPhotoProduct(null);
+      setMessage("Foto convertida a WebP y guardada.");
+    } catch (uploadError) {
+      setError(uploadError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function saveCategory(event) {
+    event.preventDefault();
+    if (!canManage) return;
+    setIsSaving(true);
+    setError("");
+    try {
+      const response = await fetch(
+        editingCategoryId
+          ? `/api/pos/manage/categories/${editingCategoryId}`
+          : "/api/pos/manage/categories",
+        {
+          method: editingCategoryId ? "PATCH" : "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: categoryName, isActive: true }),
+        },
+      );
+      const payload = await response.json();
+      if (!response.ok)
+        throw new Error(payload.message || "No se pudo guardar la categoría.");
+      const refreshed = await fetch("/api/pos/manage/categories", {
+        credentials: "same-origin",
+      });
+      setCategories((await refreshed.json()).categories);
+      setCategoryName("");
+      setEditingCategoryId("");
+      setMessage("Categoría guardada.");
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deactivateCategory(category) {
+    if (
+      !canManage ||
+      !window.confirm(`¿Desactivar la categoría ${category.name}?`)
+    )
+      return;
+    const response = await fetch(`/api/pos/manage/categories/${category.id}`, {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: category.name, isActive: false }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.message || "No se pudo desactivar la categoría.");
+      return;
+    }
+    setCategories((current) =>
+      current.map((item) =>
+        item.id === category.id ? payload.category : item,
+      ),
+    );
+  }
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -479,6 +572,17 @@ export default function ProductsManagerClient({
                       </span>
                       <span className="text-neutral-300">{stockTotal}</span>
                       <div className="flex justify-end gap-2">
+                        {canUploadPhoto(product) ? (
+                          <button
+                            type="button"
+                            onClick={() => setPhotoProduct(product)}
+                            className="grid size-9 place-items-center rounded-md border border-neutral-700 text-neutral-300 transition hover:border-emerald-500 hover:text-emerald-200"
+                            title="Subir foto"
+                            aria-label={`Subir foto de ${product.name}`}
+                          >
+                            <Camera className="size-4" />
+                          </button>
+                        ) : null}
                         {canUploadStock ? (
                           <button
                             type="button"
@@ -523,6 +627,62 @@ export default function ProductsManagerClient({
             </div>
           </div>
         </div>
+
+        {canManage ? (
+          <div className="rounded-md border border-neutral-800 bg-neutral-900 p-4">
+            <h2 className="text-lg font-semibold">Categorías</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Organiza los productos que se muestran en el catálogo.
+            </p>
+            <form onSubmit={saveCategory} className="mt-4 flex flex-wrap gap-2">
+              <input
+                value={categoryName}
+                onChange={(event) => setCategoryName(event.target.value)}
+                maxLength={80}
+                required
+                placeholder="Nombre de la categoría"
+                className="h-10 min-w-48 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-sm"
+              />
+              <button
+                disabled={isSaving}
+                className="rounded-md bg-neutral-100 px-4 text-sm font-semibold text-neutral-950"
+              >
+                {editingCategoryId ? "Actualizar" : "Agregar"}
+              </button>
+            </form>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {categories
+                .filter((category) => category.isActive)
+                .map((category) => (
+                  <div
+                    key={category.id}
+                    className="flex items-center gap-1 rounded-full border border-neutral-700 px-3 py-1 text-sm"
+                  >
+                    <span>{category.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCategoryId(category.id);
+                        setCategoryName(category.name);
+                      }}
+                      aria-label={`Editar ${category.name}`}
+                      className="p-1 text-neutral-400"
+                    >
+                      <Edit3 className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deactivateCategory(category)}
+                      aria-label={`Desactivar ${category.name}`}
+                      className="p-1 text-neutral-400"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ) : null}
 
         {isAdmin ? (
           <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
@@ -683,6 +843,27 @@ export default function ProductsManagerClient({
               />
             </label>
 
+            <label className="text-xs font-medium text-neutral-400">
+              Categoría
+              <select
+                value={form.categoryId}
+                onChange={(event) =>
+                  updateField("categoryId", event.target.value)
+                }
+                disabled={!canCreateProduct || (!canManage && Boolean(form.id))}
+                className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100"
+              >
+                <option value="">Sin categoría</option>
+                {categories
+                  .filter((category) => category.isActive)
+                  .map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+
             <div className="grid grid-cols-3 gap-3">
               <label className="text-xs font-medium text-neutral-400">
                 Precio
@@ -747,36 +928,36 @@ export default function ProductsManagerClient({
                 {skuBranches
                   .filter((branch) => branch.id === form.originBranchId)
                   .map((branch) => (
-                  <div
-                    key={branch.id}
-                    className="grid grid-cols-[1fr_90px_90px] items-center gap-2"
-                  >
-                    <span className="truncate text-sm text-neutral-300">
-                      {branch.name}
-                    </span>
-                    <input
-                      value={form.stockByBranch[branch.id]?.quantity ?? 0}
-                      onChange={(event) =>
-                        updateStock(branch.id, "quantity", event.target.value)
-                      }
-                      disabled={!canManage}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
-                    />
-                    <input
-                      value={form.stockByBranch[branch.id]?.minStock ?? 0}
-                      onChange={(event) =>
-                        updateStock(branch.id, "minStock", event.target.value)
-                      }
-                      disabled={!canManage}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
-                    />
-                  </div>
+                    <div
+                      key={branch.id}
+                      className="grid grid-cols-[1fr_90px_90px] items-center gap-2"
+                    >
+                      <span className="truncate text-sm text-neutral-300">
+                        {branch.name}
+                      </span>
+                      <input
+                        value={form.stockByBranch[branch.id]?.quantity ?? 0}
+                        onChange={(event) =>
+                          updateStock(branch.id, "quantity", event.target.value)
+                        }
+                        disabled={!canManage}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
+                      />
+                      <input
+                        value={form.stockByBranch[branch.id]?.minStock ?? 0}
+                        onChange={(event) =>
+                          updateStock(branch.id, "minStock", event.target.value)
+                        }
+                        disabled={!canManage}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
+                      />
+                    </div>
                   ))}
               </div>
               <div className="mt-2 grid grid-cols-[1fr_90px_90px] gap-2 text-xs text-neutral-600">
@@ -797,6 +978,69 @@ export default function ProductsManagerClient({
             </button>
           ) : null}
         </form>
+      ) : null}
+
+      {photoProduct ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 px-4">
+          <div className="w-full max-w-md rounded-md border border-neutral-700 bg-neutral-950 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-xs text-neutral-500 uppercase">
+                  Foto de producto
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">
+                  {photoProduct.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoProduct(null)}
+                aria-label="Cerrar"
+                className="p-2 text-neutral-400"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            {photoProduct.imageFileId ? (
+              <img
+                src={`/api/pos/manage/products/${photoProduct.id}/image?v=${photoProduct.imageFileId}`}
+                alt={photoProduct.name}
+                className="mt-4 max-h-52 w-full rounded-md object-contain"
+              />
+            ) : null}
+            <p className="mt-4 text-sm text-neutral-400">
+              La foto se reduce y se guarda en formato WebP.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-neutral-100 px-3 py-3 text-sm font-semibold text-neutral-950">
+                <ImagePlus className="size-4" /> Subir foto
+                <input
+                  type="file"
+                  accept="image/*,.heic,.heif"
+                  className="sr-only"
+                  disabled={isSaving}
+                  onChange={(event) => uploadPhoto(event.target.files?.[0])}
+                />
+              </label>
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-neutral-600 px-3 py-3 text-sm font-semibold">
+                <Camera className="size-4" /> Sacar foto
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  disabled={isSaving}
+                  onChange={(event) => uploadPhoto(event.target.files?.[0])}
+                />
+              </label>
+            </div>
+            {isSaving ? (
+              <p className="mt-3 text-sm text-neutral-400">
+                Comprimiendo y subiendo…
+              </p>
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
       {inventoryForm ? (
@@ -839,9 +1083,9 @@ export default function ProductsManagerClient({
                         branch.id === inventoryForm.product.originBranchId,
                     )
                     .map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
                     ))}
                 </select>
               </label>

@@ -156,6 +156,7 @@ const collections = [
       { type: "string", key: "address", size: 250, required: false },
       { type: "string", key: "city", size: 80, required: true },
       { type: "string", key: "phone", size: 20, required: false },
+      { type: "string", key: "whatsappNumber", size: 20, required: false },
       { type: "boolean", key: "isActive", required: true, default: true },
     ],
     indexes: [

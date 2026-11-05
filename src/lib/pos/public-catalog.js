@@ -6,6 +6,7 @@ import {
   buildPublicCatalogProducts,
   CATALOG_BRANCH_CODES,
   isPublicCatalogImageAllowed,
+  paginatePublicCatalogProducts,
 } from "./public-catalog-core.js";
 
 const { databaseId, collections, storageBucket } = appwriteConfig;
@@ -33,10 +34,11 @@ function toPublicBranch(document) {
     code: document.code,
     name: document.name,
     city: document.city || "",
+    whatsappNumber: document.whatsappNumber || "",
   };
 }
 
-export async function getPublicCatalog(code, userAgent = "") {
+export async function getPublicCatalog(code, userAgent = "", filters = {}) {
   const normalizedCode = normalizeCode(code);
   const { databases } = createAdminClient(userAgent);
   const branchDocument = await findActiveBranch(databases, normalizedCode);
@@ -91,7 +93,7 @@ export async function getPublicCatalog(code, userAgent = "") {
   });
   return {
     branch,
-    products: publicProducts,
+    ...paginatePublicCatalogProducts(publicProducts, filters),
     categories: [
       ...new Map(
         publicProducts

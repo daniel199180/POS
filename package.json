@@ -8,6 +8,7 @@
     "build": "next build",
     "setup:db": "node scripts/setup-database.js",
     "migrate:product-sku": "node scripts/migrate-product-branch-skus.js",
+    "migrate:branch-whatsapp": "node scripts/migrate-branch-whatsapp.js",
     "register:functions": "node scripts/register-appwrite-functions.js",
     "deploy:functions": "node scripts/deploy-appwrite-functions.js",
     "seed:pos": "node scripts/seed-pos-demo.js",
@@ -26,11 +27,12 @@
     "appwrite": "^18.1.1",
     "dotenv": "^17.4.2",
     "lucide-react": "^1.21.0",
-    "next": "^16.3.4",
+    "next": "^16.4.5",
     "node-appwrite": "^18.0.0",
     "postcss": "^8.5.28",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {

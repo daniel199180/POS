@@ -38,6 +38,7 @@ function toBranch(document) {
     address: document.address || "",
     city: document.city,
     phone: document.phone || "",
+    whatsappNumber: document.whatsappNumber || "",
     isActive: document.isActive,
   };
 }
@@ -95,12 +96,20 @@ function sanitizeBranchInput(input) {
     throw new Error("Nombre, codigo y ciudad son obligatorios.");
   }
 
+  const whatsappNumber = text(input.whatsappNumber).replace(/[^\d]/g, "");
+  if (whatsappNumber && !/^\d{8,15}$/.test(whatsappNumber)) {
+    throw inputError(
+      "El WhatsApp debe tener entre 8 y 15 dígitos con código de país.",
+    );
+  }
+
   return {
     name,
     code,
     address: text(input.address),
     city,
     phone: text(input.phone),
+    whatsappNumber,
     isActive: bool(input.isActive, true),
   };
 }
@@ -153,6 +162,22 @@ async function getSkuBranch(databases, context, branchId) {
   }
 
   return { branch, prefix: getSkuPrefix(branch) };
+}
+
+async function assertValidCategory(databases, categoryId) {
+  if (!categoryId) return;
+  try {
+    const category = await databases.getDocument({
+      databaseId,
+      collectionId: collections.categories,
+      documentId: categoryId,
+    });
+    if (category.isActive === false)
+      throw inputError("La categoría está inactiva.");
+  } catch (error) {
+    if (isNotFound(error)) throw inputError("La categoría no existe.");
+    throw error;
+  }
 }
 
 function getNumericSku(sku, prefix) {
@@ -577,11 +602,13 @@ export async function createProduct(context, input) {
     context,
     input.originBranchId,
   );
+  await assertValidCategory(databases, text(input.categoryId));
   const sku = await allocateSku(databases, branch.$id, prefix);
   const { product, stockByBranch } = sanitizeProductInput(input, {
     sku,
     originBranchId: branch.$id,
   });
+  product.imageFileId = "";
   const productId = ID.unique();
   const document = await withAudit(
     databases,
@@ -638,6 +665,8 @@ export async function updateProduct(context, productId, input) {
     sku: before.sku,
     originBranchId,
   });
+  await assertValidCategory(databases, product.categoryId);
+  product.imageFileId = before.imageFileId || "";
   await withAudit(
     databases,
     context,

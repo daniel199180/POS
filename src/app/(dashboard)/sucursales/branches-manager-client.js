@@ -15,6 +15,7 @@ const emptyForm = {
   address: "",
   city: "",
   phone: "",
+  whatsappNumber: "",
   isActive: true,
 };
 
@@ -364,6 +365,21 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
               value={form.phone}
               onChange={(event) => updateField("phone", event.target.value)}
               disabled={!canManage}
+              className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
+            />
+          </label>
+
+          <label className="text-xs font-medium text-neutral-400">
+            WhatsApp del catálogo (con código de país)
+            <input
+              value={form.whatsappNumber}
+              onChange={(event) =>
+                updateField("whatsappNumber", event.target.value)
+              }
+              disabled={!canManage}
+              type="tel"
+              inputMode="tel"
+              placeholder="5917XXXXXXX"
               className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:opacity-60"
             />
           </label>
