@@ -523,7 +523,7 @@ export default function PaymentsManagerClient({
           }
         />
 
-        <div className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
+        <div className="overflow-x-auto rounded-md border border-neutral-800 bg-neutral-900">
           <div className="grid grid-cols-[minmax(220px,1fr)_150px_130px_120px_140px] border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-medium text-neutral-500 uppercase">
             <span>Metodo</span>
             <span>Proveedor</span>
@@ -680,7 +680,7 @@ export default function PaymentsManagerClient({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-medium text-neutral-400">
               Orden
               <input

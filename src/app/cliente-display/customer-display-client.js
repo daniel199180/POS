@@ -330,7 +330,7 @@ export default function CustomerDisplayClient({ initialSessionId }) {
 
   if (!initialSessionId) {
     return (
-      <main className="grid h-screen place-items-center overflow-hidden bg-neutral-950 px-6 text-neutral-100">
+      <main className="grid min-h-[100dvh] place-items-center bg-neutral-950 px-6 text-neutral-100">
         <div className="max-w-xl text-center">
           <Monitor className="mx-auto size-12 text-neutral-500" />
           <p className="mt-3 text-neutral-400">
@@ -354,23 +354,23 @@ export default function CustomerDisplayClient({ initialSessionId }) {
 
   if (greenOverlay) {
     return (
-      <main className="grid h-screen place-items-center overflow-hidden bg-emerald-950 px-8 text-emerald-50">
+      <main className="grid min-h-[100dvh] place-items-center bg-emerald-950 px-5 py-8 text-emerald-50 sm:px-8">
         <audio
           ref={successAudioRef}
           src="/sounds/payment-success.mp3"
           preload="auto"
         />
         <div className="text-center">
-          <div className="mx-auto grid size-28 place-items-center rounded-full border border-emerald-700 bg-emerald-900">
-            <CircleCheck className="size-16" />
+          <div className="mx-auto grid size-20 place-items-center rounded-full border border-emerald-700 bg-emerald-900 sm:size-28">
+            <CircleCheck className="size-11 sm:size-16" />
           </div>
-          <p className="mt-8 text-sm font-semibold tracking-[0.28em] text-emerald-200 uppercase">
+          <p className="mt-6 text-xs font-semibold tracking-[0.22em] text-emerald-200 uppercase sm:mt-8 sm:text-sm sm:tracking-[0.28em]">
             Pago exitoso
           </p>
-          <h1 className="mt-4 text-5xl font-semibold">
+          <h1 className="mt-4 text-3xl font-semibold sm:text-5xl">
             {greenOverlay.message || "Compra confirmada."}
           </h1>
-          <p className="mt-6 text-6xl font-semibold tracking-normal">
+          <p className="mt-5 text-4xl font-semibold tracking-normal sm:mt-6 sm:text-6xl">
             {money(greenOverlay.total)}
           </p>
           {greenOverlay.saleNumber ? (
@@ -384,30 +384,32 @@ export default function CustomerDisplayClient({ initialSessionId }) {
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-neutral-950 p-4 text-neutral-100 lg:p-6">
+    <main className="min-h-[100dvh] overflow-y-auto bg-neutral-950 p-3 text-neutral-100 sm:p-4 lg:h-[100dvh] lg:overflow-hidden lg:p-6">
       <audio
         ref={successAudioRef}
         src="/sounds/payment-success.mp3"
         preload="auto"
       />
       <section
-        className={`grid h-full min-h-0 gap-4 ${
+        className={`grid min-h-0 gap-4 lg:h-full ${
           isQrPayment
-            ? "grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]"
-            : "grid-cols-2"
+            ? "lg:grid-cols-[minmax(280px,0.72fr)_minmax(360px,1.28fr)]"
+            : "lg:grid-cols-2"
         }`}
       >
-        <div className="flex min-h-0 flex-col rounded-md border border-neutral-800 bg-neutral-950">
-          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-neutral-800 px-5 py-4">
+        <div className="flex min-h-[24rem] flex-col rounded-md border border-neutral-800 bg-neutral-950 lg:min-h-0">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-neutral-800 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-neutral-400">
                 {snapshot.cashier.name || "Cajero"}
               </p>
-              <h1 className="mt-1 text-2xl font-semibold">Detalle de compra</h1>
+              <h1 className="mt-1 text-xl font-semibold sm:text-2xl">
+                Detalle de compra
+              </h1>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2 text-right">
               <span
-                className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium ${
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-2 text-[11px] font-medium sm:gap-2 sm:px-3 sm:text-xs ${
                   isConnected
                     ? "border-emerald-900 bg-emerald-950 text-emerald-200"
                     : "border-neutral-800 bg-neutral-900 text-neutral-400"
@@ -426,7 +428,7 @@ export default function CustomerDisplayClient({ initialSessionId }) {
             </div>
           </div>
 
-          <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_86px_130px] border-b border-neutral-800 bg-neutral-900 px-5 py-3 text-xs font-medium text-neutral-500 uppercase">
+          <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_52px_88px] border-b border-neutral-800 bg-neutral-900 px-3 py-3 text-[11px] font-medium text-neutral-500 uppercase sm:grid-cols-[minmax(0,1fr)_86px_130px] sm:px-5 sm:text-xs">
             <span>Producto</span>
             <span className="text-center">Cant.</span>
             <span className="text-right">Subtotal</span>
@@ -438,14 +440,14 @@ export default function CustomerDisplayClient({ initialSessionId }) {
                 {visibleCartItems.map((item) => (
                   <div
                     key={item.id}
-                    className={`mx-3 my-3 grid grid-cols-[minmax(0,1fr)_86px_130px] items-center rounded-md border p-3 ${
+                    className={`mx-2 my-2 grid grid-cols-[minmax(0,1fr)_52px_88px] items-center rounded-md border p-2 sm:mx-3 sm:my-3 sm:grid-cols-[minmax(0,1fr)_86px_130px] sm:p-3 ${
                       item.category === "monthly"
                         ? "border-cyan-800 bg-cyan-950/30"
                         : "border-emerald-800 bg-emerald-950/30"
                     }`}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-lg font-semibold">
+                      <p className="truncate text-sm font-semibold sm:text-lg">
                         {item.name}
                       </p>
                       <p className="mt-1 truncate text-sm text-neutral-500">
@@ -454,10 +456,10 @@ export default function CustomerDisplayClient({ initialSessionId }) {
                           : item.sku}
                       </p>
                     </div>
-                    <p className="text-center text-xl font-semibold">
+                    <p className="text-center text-base font-semibold sm:text-xl">
                       {item.quantity}
                     </p>
-                    <p className="text-right text-lg font-semibold">
+                    <p className="text-right text-sm font-semibold sm:text-lg">
                       {money(item.subtotal)}
                     </p>
                   </div>
@@ -475,7 +477,7 @@ export default function CustomerDisplayClient({ initialSessionId }) {
             )}
           </div>
 
-          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-neutral-800 px-5 py-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-neutral-800 px-3 py-3 sm:px-5">
             <p className="text-sm text-neutral-500">
               {snapshot.cart.length} productos
               {hiddenCartItems > 0 ? ` / ${hiddenCartItems} mas` : ""}
@@ -488,14 +490,14 @@ export default function CustomerDisplayClient({ initialSessionId }) {
 
         <aside
           className={`flex min-h-0 flex-col rounded-md border border-neutral-800 bg-neutral-900 ${
-            isQrPayment ? "justify-center p-4" : "p-5"
+            isQrPayment ? "justify-center p-3 sm:p-4" : "p-3 sm:p-5"
           }`}
         >
           <div
             className={`mx-auto flex aspect-square shrink-0 flex-col rounded-md border border-neutral-800 bg-neutral-950 ${
               isQrPayment
-                ? "w-[min(100%,calc(100vh-72px))] p-3"
-                : "w-[min(100%,calc(100vh-230px))] p-4"
+                ? "w-[min(100%,calc(100dvh-72px))] p-3"
+                : "w-[min(100%,calc(100dvh-230px))] p-4"
             }`}
           >
             {isQrPayment ? (

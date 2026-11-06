@@ -572,7 +572,7 @@ export default function UsersManagerClient({
             </div>
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-medium text-neutral-400">
               Rol
               <select

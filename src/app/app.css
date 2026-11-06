@@ -6,10 +6,26 @@
 
 html {
   min-height: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   min-height: 100%;
+  overflow-wrap: anywhere;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+  min-width: 0;
 }
 
 @keyframes catalog-cart-open {

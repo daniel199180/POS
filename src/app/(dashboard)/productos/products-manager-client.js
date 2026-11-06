@@ -807,7 +807,7 @@ export default function ProductsManagerClient({
               />
             </label>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="text-xs font-medium text-neutral-400">
                 SKU automático
                 <input
@@ -864,7 +864,7 @@ export default function ProductsManagerClient({
               </select>
             </label>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
               <label className="text-xs font-medium text-neutral-400">
                 Precio
                 <input
@@ -981,7 +981,7 @@ export default function ProductsManagerClient({
       ) : null}
 
       {photoProduct ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 px-4">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/75 px-4 py-4">
           <div className="w-full max-w-md rounded-md border border-neutral-700 bg-neutral-950 p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -1011,7 +1011,7 @@ export default function ProductsManagerClient({
             <p className="mt-4 text-sm text-neutral-400">
               La foto se reduce y se guarda en formato WebP.
             </p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-neutral-100 px-3 py-3 text-sm font-semibold text-neutral-950">
                 <ImagePlus className="size-4" /> Subir foto
                 <input
@@ -1044,7 +1044,7 @@ export default function ProductsManagerClient({
       ) : null}
 
       {inventoryForm ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/70 px-4 py-4">
           <form
             onSubmit={saveInventoryIncrease}
             className="w-full max-w-md rounded-md border border-neutral-800 bg-neutral-950 p-4 shadow-2xl"

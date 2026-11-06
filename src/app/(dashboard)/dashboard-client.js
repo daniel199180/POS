@@ -1629,8 +1629,8 @@ export default function DashboardClient({
         src="/sounds/payment-success.mp3"
         preload="auto"
       />
-      <section className="mx-auto grid h-[100dvh] w-full max-w-[1600px] gap-4 overflow-hidden px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px]">
-        <div className="flex min-h-0 flex-col gap-4">
+      <section className="mx-auto grid min-h-[calc(100dvh-72px)] w-full max-w-[1600px] gap-4 px-3 py-3 sm:px-6 sm:py-4 lg:h-[100dvh] lg:grid-cols-[minmax(0,1fr)_390px] lg:overflow-hidden">
+        <div className="flex min-h-[calc(100dvh-96px)] flex-col gap-4 lg:min-h-0">
           {catalogError ? (
             <div className="rounded-md border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-200">
               {catalogError}
@@ -2255,7 +2255,7 @@ export default function DashboardClient({
             }`}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
+              <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 min-[440px]:grid-cols-3">
                 <div className="rounded-md border border-violet-800 bg-violet-950/30 px-3 py-2">
                   <p className="text-[11px] font-medium text-violet-200">
                     Ingresos totales
@@ -2313,7 +2313,7 @@ export default function DashboardClient({
           </div>
         </div>
 
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
+        <aside className="flex min-h-[36rem] flex-col overflow-hidden rounded-md border border-neutral-800 bg-neutral-900 lg:min-h-0">
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
             {cart.length === 0 ? (
               <p className="py-10 text-center text-sm text-neutral-500">
@@ -2401,15 +2401,7 @@ export default function DashboardClient({
               <p className="text-xs font-medium text-neutral-500 uppercase">
                 Metodo de pago
               </p>
-              <div
-                className="mt-2 grid gap-2"
-                style={{
-                  gridTemplateColumns: `repeat(${Math.max(
-                    branchPaymentMethods.length,
-                    1,
-                  )}, minmax(0, 1fr))`,
-                }}
-              >
+              <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2">
                 {branchPaymentMethods.map((method) => {
                   const Icon = paymentIcons[method.type] || CreditCard;
                   const isSelected = selectedPayment?.id === method.id;
@@ -2583,8 +2575,8 @@ export default function DashboardClient({
         </aside>
       </section>
       {shouldShowSaleSuccessOverlay ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4">
-          <div className="w-full max-w-md rounded-md border border-emerald-800 bg-emerald-950 p-6 text-center text-emerald-50 shadow-2xl">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/70 px-4 py-4">
+          <div className="w-full max-w-md rounded-md border border-emerald-800 bg-emerald-950 p-5 text-center text-emerald-50 shadow-2xl sm:p-6">
             <div className="mx-auto grid size-20 place-items-center rounded-full border border-emerald-700 bg-emerald-900">
               <CircleCheck className="size-11" />
             </div>

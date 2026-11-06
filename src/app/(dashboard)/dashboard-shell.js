@@ -18,6 +18,7 @@ import {
   ShoppingCart,
   Store,
   Users,
+  X,
 } from "lucide-react";
 
 const navigation = [
@@ -115,6 +116,7 @@ export default function DashboardShell({ user, profile, settings, children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const visibleNavigation = navigation.filter((item) => {
     if (item.superAdminOnly) {
@@ -137,7 +139,35 @@ export default function DashboardShell({ user, profile, settings, children }) {
 
   useEffect(() => {
     setCollapsed(true);
+    setIsMobileMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const desktopViewport = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = (event) => {
+      if (event.matches) setIsMobileMenuOpen(false);
+    };
+
+    desktopViewport.addEventListener("change", closeOnDesktop);
+    return () => desktopViewport.removeEventListener("change", closeOnDesktop);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setIsMobileMenuOpen(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isMobileMenuOpen]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -151,10 +181,10 @@ export default function DashboardShell({ user, profile, settings, children }) {
   }
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="flex min-h-screen">
+    <main className="min-h-[100dvh] bg-neutral-950 text-neutral-100">
+      <div className="flex min-h-[100dvh]">
         <aside
-          className={`hidden border-r border-neutral-800 bg-neutral-950 transition-[width] duration-200 lg:block ${
+          className={`sticky top-0 hidden h-[100dvh] self-start border-r border-neutral-800 bg-neutral-950 transition-[width] duration-200 lg:block ${
             collapsed ? "w-[76px]" : "w-64"
           }`}
         >
@@ -177,7 +207,7 @@ export default function DashboardShell({ user, profile, settings, children }) {
               </button>
             </div>
 
-            <nav className="flex-1 space-y-1 px-3 py-4">
+            <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
               {visibleNavigation.map((item) => {
                 const Icon = item.icon;
                 const isActive =
@@ -203,7 +233,7 @@ export default function DashboardShell({ user, profile, settings, children }) {
               })}
             </nav>
 
-            <div className="border-t border-neutral-800 p-3">
+            <div className="shrink-0 border-t border-neutral-800 p-3">
               {!collapsed ? (
                 <div className="mb-3 rounded-md border border-neutral-800 bg-neutral-900 p-3">
                   <p className="truncate text-sm font-medium">
@@ -239,43 +269,96 @@ export default function DashboardShell({ user, profile, settings, children }) {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="border-b border-neutral-800 bg-neutral-950/95 lg:hidden">
-            <div className="flex items-center justify-between px-4 py-4">
+          <header className="sticky top-0 z-40 border-b border-neutral-800 bg-neutral-950/95 backdrop-blur lg:hidden">
+            <div className="flex h-[72px] items-center justify-between gap-3 px-4">
               <BrandBlock collapsed={false} settings={settings} />
               <button
                 type="button"
-                onClick={handleSignOut}
-                disabled={isSigningOut}
-                className="rounded-md border border-neutral-800 px-3 py-2 text-sm text-neutral-300"
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="grid size-11 shrink-0 place-items-center rounded-md border border-neutral-800 text-neutral-300 transition hover:border-neutral-600 hover:bg-neutral-900 hover:text-white"
+                aria-label="Abrir menú principal"
+                aria-expanded={isMobileMenuOpen}
+                aria-controls="mobile-navigation"
               >
-                {isSigningOut ? "Cerrando..." : "Salir"}
+                <Menu className="size-5" />
               </button>
             </div>
-            <nav className="flex gap-2 overflow-x-auto px-4 pb-4">
-              {visibleNavigation.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm ${
-                      isActive
-                        ? "border-neutral-100 bg-neutral-100 text-neutral-950"
-                        : "border-neutral-800 text-neutral-300"
-                    }`}
-                  >
-                    <Icon className="size-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
           </header>
+
+          {isMobileMenuOpen ? (
+            <div className="fixed inset-0 z-50 flex lg:hidden">
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/70"
+                onClick={() => setIsMobileMenuOpen(false)}
+                aria-label="Cerrar menú principal"
+              />
+              <aside
+                id="mobile-navigation"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Menú principal"
+                className="relative flex h-[100dvh] w-[min(20rem,calc(100%-3rem))] flex-col border-r border-neutral-800 bg-neutral-950 shadow-2xl"
+              >
+                <div className="flex h-[72px] shrink-0 items-center justify-between gap-3 border-b border-neutral-800 px-4">
+                  <BrandBlock collapsed={false} settings={settings} />
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="grid size-10 shrink-0 place-items-center rounded-md text-neutral-400 transition hover:bg-neutral-900 hover:text-white"
+                    aria-label="Cerrar menú principal"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
+                  {visibleNavigation.map((item) => {
+                    const Icon = item.icon;
+                    const isActive =
+                      item.href === "/"
+                        ? pathname === "/"
+                        : pathname.startsWith(item.href);
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition ${
+                          isActive
+                            ? "bg-neutral-100 text-neutral-950"
+                            : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"
+                        }`}
+                      >
+                        <Icon className="size-5 shrink-0" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </nav>
+
+                <div className="shrink-0 border-t border-neutral-800 p-3">
+                  <div className="mb-3 min-w-0 rounded-md border border-neutral-800 bg-neutral-900 p-3">
+                    <p className="truncate text-sm font-medium">
+                      {user.name || "Sin nombre"}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-neutral-500">
+                      {user.email}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    disabled={isSigningOut}
+                    className="flex h-11 w-full items-center gap-3 rounded-md border border-neutral-800 px-3 text-sm font-medium text-neutral-300 transition hover:border-neutral-600 hover:bg-neutral-900 hover:text-white disabled:opacity-60"
+                  >
+                    <LogOut className="size-5 shrink-0" />
+                    {isSigningOut ? "Cerrando..." : "Cerrar sesión"}
+                  </button>
+                </div>
+              </aside>
+            </div>
+          ) : null}
 
           <div className="min-w-0 flex-1">{children}</div>
         </div>
