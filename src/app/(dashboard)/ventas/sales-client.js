@@ -8,11 +8,14 @@ import {
   ChevronRight,
   CreditCard,
   Eye,
+  Loader2,
+  Printer,
   QrCode,
   ReceiptText,
   Search,
   X,
 } from "lucide-react";
+import { printReceipt } from "@/lib/pos/receipt-printing";
 
 const paymentLabels = {
   cash: "Efectivo",
@@ -87,6 +90,7 @@ export default function SalesClient({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [selectedSale, setSelectedSale] = useState(null);
+  const [printingSaleId, setPrintingSaleId] = useState("");
 
   const totalPages = useMemo(
     () => Math.max(Math.ceil(total / Number(filters.pageSize || 25)), 1),
@@ -192,6 +196,28 @@ export default function SalesClient({
       setError(cancelError.message);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handlePrintSale(sale) {
+    setPrintingSaleId(sale.id);
+    setMessage("");
+    setError("");
+
+    try {
+      const result = await printReceipt(sale);
+      setMessage(
+        result.mode === "browser"
+          ? "Recibo preparado en el diálogo de impresión."
+          : `Recibo enviado a ${result.printerName}.`,
+      );
+    } catch (printError) {
+      setError(
+        printError.message ||
+          "No se pudo imprimir. Revisa la configuración de la impresora.",
+      );
+    } finally {
+      setPrintingSaleId("");
     }
   }
 
@@ -739,7 +765,20 @@ export default function SalesClient({
               </div>
             </div>
 
-            <div className="flex justify-end border-t border-neutral-800 px-5 py-4">
+            <div className="flex flex-col-reverse gap-3 border-t border-neutral-800 px-5 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => handlePrintSale(selectedSale)}
+                disabled={printingSaleId === selectedSale.id}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-neutral-700 px-4 text-sm font-semibold text-neutral-200 transition hover:border-neutral-400 hover:text-white disabled:opacity-60"
+              >
+                {printingSaleId === selectedSale.id ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Printer className="size-4" />
+                )}
+                Imprimir recibo
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedSale(null)}

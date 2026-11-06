@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import InstituteConnectionCard from "./institute-connection-card";
+import ReceiptPrinterSettings from "./receipt-printer-settings";
 
 function formatFileSize(bytes = 0) {
   if (!bytes) {
@@ -434,6 +435,8 @@ export default function SettingsClient({
           </button>
         </div>
       </form>
+
+      <ReceiptPrinterSettings canManage={canManage} />
 
       {canManageMcp && mcpSettings ? (
         <section className="rounded-md border border-neutral-800 bg-neutral-900 p-4">

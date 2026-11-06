@@ -16,6 +16,7 @@ import {
   Minus,
   Package,
   Plus,
+  Printer,
   QrCode,
   RotateCcw,
   Search,
@@ -34,6 +35,10 @@ import {
   getCustomerDisplayHeartbeatKey,
   getCustomerDisplayStorageKey,
 } from "@/lib/pos/customer-display";
+import {
+  printReceipt,
+  shouldAutoPrintReceipt,
+} from "@/lib/pos/receipt-printing";
 
 const PRODUCT_PAGE_SIZE = 20;
 const SALE_SUCCESS_RESET_DELAY_MS = 1800;
@@ -304,6 +309,8 @@ export default function DashboardClient({
   const [saleMessage, setSaleMessage] = useState("");
   const [saleError, setSaleError] = useState("");
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
+  const [receiptPrintMessage, setReceiptPrintMessage] = useState("");
+  const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
   const [isCharging, setIsCharging] = useState(false);
   const [isCreatingPaymentLink, setIsCreatingPaymentLink] = useState(false);
   const [latestPaymentLink, setLatestPaymentLink] = useState(null);
@@ -927,6 +934,7 @@ export default function DashboardClient({
     setSaleMessage("");
     setSaleError("");
     setLastCompletedSale(null);
+    setReceiptPrintMessage("");
     const branchStock = product.stockByBranch[selectedBranchId]?.quantity || 0;
 
     setCart((current) => {
@@ -1103,6 +1111,7 @@ export default function DashboardClient({
     setSaleMessage("");
     setSaleError("");
     setLastCompletedSale(null);
+    setReceiptPrintMessage("");
     setPaymentLinkNotes("");
     qrPaymentRef.current = null;
     qrAutoGenerateKeyRef.current = "";
@@ -1174,6 +1183,30 @@ export default function DashboardClient({
     }
   }
 
+  async function handlePrintReceipt(receipt = lastCompletedSale) {
+    if (!receipt) return;
+
+    clearSaleResetTimer();
+    setIsPrintingReceipt(true);
+    setReceiptPrintMessage("");
+
+    try {
+      const result = await printReceipt(receipt);
+      setReceiptPrintMessage(
+        result.mode === "browser"
+          ? "Recibo preparado en el diálogo de impresión."
+          : `Recibo enviado a ${result.printerName}.`,
+      );
+    } catch (printError) {
+      setReceiptPrintMessage(
+        `La venta está guardada. No se pudo imprimir: ${printError.message || "revisa la configuración de la impresora"}.`,
+      );
+    } finally {
+      setIsPrintingReceipt(false);
+      scheduleSaleReset();
+    }
+  }
+
   async function registerSale(extraPayload = {}) {
     setIsCharging(true);
     setSaleMessage("");
@@ -1222,10 +1255,27 @@ export default function DashboardClient({
       const completedSale = {
         id: payload.sale.id,
         saleNumber: payload.sale.saleNumber,
+        branchName: selectedBranch?.name || "Punto de venta",
+        cashierName: user.name || user.email,
+        subtotal: totals.subtotal,
+        discount: totals.discount,
         total: totals.total,
         paymentType: selectedPayment.type,
         paymentLabel: selectedPayment.label,
+        paymentMethodType: selectedPayment.type,
+        paymentMethodLabel: selectedPayment.label,
+        amountPaid:
+          selectedPayment.type === "cash" ? totals.paid : totals.total,
+        change: selectedPayment.type === "cash" ? totals.change : 0,
         senderName: payload.sale.senderName || "",
+        notes: String(extraPayload.notes || ""),
+        items: cart.map((item) => ({
+          productName: item.name,
+          productSku: item.sku,
+          quantity: item.quantity,
+          unitPrice: item.price,
+          subtotal: item.price * item.quantity,
+        })),
         message: completedMessage,
         completedAt: new Date().toISOString(),
       };
@@ -1244,6 +1294,21 @@ export default function DashboardClient({
       );
       publishCustomerDisplaySnapshot(completedSnapshot);
       playPaymentSuccessSound();
+      setReceiptPrintMessage("");
+      if (shouldAutoPrintReceipt()) {
+        try {
+          const result = await printReceipt(completedSale);
+          setReceiptPrintMessage(
+            result.mode === "browser"
+              ? "Recibo preparado en el diálogo de impresión."
+              : `Recibo enviado a ${result.printerName}.`,
+          );
+        } catch (printError) {
+          setReceiptPrintMessage(
+            `La venta está guardada. No se pudo imprimir: ${printError.message || "revisa la configuración de la impresora"}.`,
+          );
+        }
+      }
       setCart([]);
       if (instituteCartItems.length > 0) {
         setInstitutePanelKey((current) => current + 1);
@@ -2607,7 +2672,25 @@ export default function DashboardClient({
                 </p>
               </div>
             </div>
-            <p className="mt-5 text-sm text-emerald-200">Volviendo al POS...</p>
+            {receiptPrintMessage ? (
+              <p className="mt-4 rounded-md border border-emerald-800 bg-emerald-900/70 px-3 py-2 text-sm text-emerald-100">
+                {receiptPrintMessage}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => handlePrintReceipt(lastCompletedSale)}
+              disabled={isPrintingReceipt}
+              className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-emerald-700 bg-emerald-900 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-800 disabled:opacity-60"
+            >
+              {isPrintingReceipt ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Printer className="size-4" />
+              )}
+              Imprimir recibo
+            </button>
+            <p className="mt-4 text-sm text-emerald-200">Volviendo al POS...</p>
           </div>
         </div>
       ) : null}
