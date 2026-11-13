@@ -16,6 +16,13 @@ import {
   X,
 } from "lucide-react";
 import { printReceipt } from "@/lib/pos/receipt-printing";
+import {
+  getPaymentMethodOptionLabel,
+  getStaticQrOptionLabel,
+  getVisiblePaymentMethods,
+  getVisibleStaticQrs,
+  prepareAppliedSalesFilters,
+} from "@/lib/pos/sales-filter-options";
 
 const paymentLabels = {
   cash: "Efectivo",
@@ -82,6 +89,7 @@ export default function SalesClient({
   timeZone = "America/La_Paz",
 }) {
   const [filters, setFilters] = useState(initialFilters);
+  const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [sales, setSales] = useState(initialData.sales);
   const [summary, setSummary] = useState(initialData.summary);
   const [total, setTotal] = useState(initialData.total);
@@ -95,6 +103,15 @@ export default function SalesClient({
   const totalPages = useMemo(
     () => Math.max(Math.ceil(total / Number(filters.pageSize || 25)), 1),
     [filters.pageSize, total],
+  );
+  const visiblePaymentMethods = useMemo(
+    () =>
+      getVisiblePaymentMethods(options.paymentMethods, draftFilters.branchId),
+    [draftFilters.branchId, options.paymentMethods],
+  );
+  const visibleStaticQrs = useMemo(
+    () => getVisibleStaticQrs(options.staticQrs, draftFilters.branchId),
+    [draftFilters.branchId, options.staticQrs],
   );
 
   useEffect(() => {
@@ -140,11 +157,48 @@ export default function SalesClient({
 
   function updateFilter(field, value) {
     setMessage("");
-    setFilters((current) => ({
+    setDraftFilters((current) => ({
       ...current,
       [field]: value,
       page: 1,
     }));
+  }
+
+  function updateBranchFilter(branchId) {
+    setMessage("");
+    setDraftFilters((current) => ({
+      ...current,
+      branchId,
+      paymentMethodId: "",
+      staticQrId: "",
+      page: 1,
+    }));
+  }
+
+  function updateStaticQrOnly(staticQrOnly) {
+    setMessage("");
+    setDraftFilters((current) => ({
+      ...current,
+      staticQrOnly,
+      staticQrId: staticQrOnly === "true" ? current.staticQrId : "",
+      page: 1,
+    }));
+  }
+
+  function updateStaticQrFilter(staticQrId) {
+    setMessage("");
+    setDraftFilters((current) => ({
+      ...current,
+      staticQrOnly: staticQrId ? "true" : current.staticQrOnly,
+      staticQrId,
+      page: 1,
+    }));
+  }
+
+  function applyFilters(event) {
+    event.preventDefault();
+    setMessage("");
+    setFilters(prepareAppliedSalesFilters(draftFilters));
   }
 
   function movePage(direction) {
@@ -270,11 +324,14 @@ export default function SalesClient({
         </div>
       </div>
 
-      <div className="grid gap-3 rounded-md border border-neutral-800 bg-neutral-900 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1.4fr]">
+      <form
+        onSubmit={applyFilters}
+        className="grid gap-3 rounded-md border border-neutral-800 bg-neutral-900 p-4 lg:grid-cols-4 2xl:grid-cols-[repeat(9,minmax(0,1fr))_auto]"
+      >
         <label className="text-xs font-medium text-neutral-400">
           Desde
           <input
-            value={filters.dateFrom}
+            value={draftFilters.dateFrom}
             onChange={(event) => updateFilter("dateFrom", event.target.value)}
             type="date"
             className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
@@ -284,7 +341,7 @@ export default function SalesClient({
         <label className="text-xs font-medium text-neutral-400">
           Hasta
           <input
-            value={filters.dateTo}
+            value={draftFilters.dateTo}
             onChange={(event) => updateFilter("dateTo", event.target.value)}
             type="date"
             className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
@@ -294,8 +351,8 @@ export default function SalesClient({
         <label className="text-xs font-medium text-neutral-400">
           Sucursal
           <select
-            value={filters.branchId}
-            onChange={(event) => updateFilter("branchId", event.target.value)}
+            value={draftFilters.branchId}
+            onChange={(event) => updateBranchFilter(event.target.value)}
             className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
           >
             <option value="">Todas</option>
@@ -310,7 +367,7 @@ export default function SalesClient({
         <label className="text-xs font-medium text-neutral-400">
           Pago
           <select
-            value={filters.paymentType}
+            value={draftFilters.paymentType}
             onChange={(event) =>
               updateFilter("paymentType", event.target.value)
             }
@@ -326,16 +383,49 @@ export default function SalesClient({
         <label className="text-xs font-medium text-neutral-400">
           Método de pago
           <select
-            value={filters.paymentMethodId}
+            value={draftFilters.paymentMethodId}
             onChange={(event) =>
               updateFilter("paymentMethodId", event.target.value)
             }
             className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
           >
             <option value="">Todos los métodos</option>
-            {options.paymentMethods.map((method) => (
+            {visiblePaymentMethods.map((method) => (
               <option key={method.id} value={method.id}>
-                {method.label}
+                {getPaymentMethodOptionLabel(
+                  method,
+                  options.branches,
+                  draftFilters.branchId,
+                )}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-xs font-medium text-neutral-400">
+          Origen QR
+          <select
+            value={draftFilters.staticQrOnly}
+            onChange={(event) => updateStaticQrOnly(event.target.value)}
+            className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
+          >
+            <option value="">Todos</option>
+            <option value="true">Solo QR estáticos</option>
+          </select>
+        </label>
+
+        <label className="text-xs font-medium text-neutral-400">
+          QR estático
+          <select
+            value={draftFilters.staticQrId}
+            onChange={(event) => updateStaticQrFilter(event.target.value)}
+            disabled={draftFilters.staticQrOnly !== "true"}
+            className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="">Todos los QR estáticos</option>
+            {visibleStaticQrs.map((qr) => (
+              <option key={qr.id} value={qr.id}>
+                {getStaticQrOptionLabel(qr, draftFilters.branchId)}
               </option>
             ))}
           </select>
@@ -344,7 +434,7 @@ export default function SalesClient({
         <label className="text-xs font-medium text-neutral-400">
           Cajero
           <select
-            value={filters.cashierId}
+            value={draftFilters.cashierId}
             onChange={(event) => updateFilter("cashierId", event.target.value)}
             className="mt-1 h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 transition outline-none focus:border-neutral-300"
           >
@@ -360,12 +450,12 @@ export default function SalesClient({
         <div className="relative self-end">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-500" />
           <input
-            value={filters.search}
+            value={draftFilters.search}
             onChange={(event) => updateFilter("search", event.target.value)}
             placeholder="Buscar orden, cajero o sucursal"
             className="h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-10 pr-11 text-sm text-neutral-100 transition outline-none placeholder:text-neutral-600 focus:border-neutral-300"
           />
-          {filters.search ? (
+          {draftFilters.search ? (
             <button
               type="button"
               onClick={() => updateFilter("search", "")}
@@ -376,7 +466,16 @@ export default function SalesClient({
             </button>
           ) : null}
         </div>
-      </div>
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="inline-flex h-11 items-center justify-center gap-2 self-end rounded-md bg-neutral-100 px-5 text-sm font-semibold text-neutral-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isLoading ? <Loader2 className="size-4 animate-spin" /> : null}
+          Aplicar filtros
+        </button>
+      </form>
 
       <div className="grid gap-3 md:grid-cols-3">
         {Object.entries(summary.paymentTotals).map(([type, value]) => {

@@ -553,6 +553,7 @@ export async function getStaticQrFilterOptions(context) {
         "createdByUserId",
         "createdByName",
         "description",
+        "branchId",
         "branchName",
         "status",
       ]),
@@ -569,6 +570,7 @@ export async function getStaticQrFilterOptions(context) {
     qrs.push({
       id: document.$id,
       description: document.description,
+      branchId: document.branchId,
       branchName: document.branchName,
       status: document.status,
     });

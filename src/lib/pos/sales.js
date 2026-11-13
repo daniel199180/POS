@@ -348,7 +348,7 @@ function allowedBranchFilter(context, requestedBranchId) {
 function buildSalesQueries(
   context,
   filters = {},
-  { paginate = true, timeZone = DEFAULT_TIME_ZONE } = {},
+  { paginate = true, staticQrSaleIds, timeZone = DEFAULT_TIME_ZONE } = {},
 ) {
   const pageSize = clampPageSize(filters.pageSize);
   const page = Math.max(Math.trunc(number(filters.page, 1)), 1);
@@ -358,6 +358,7 @@ function buildSalesQueries(
   const branchFilter = allowedBranchFilter(context, filters.branchId);
   const paymentType = text(filters.paymentType);
   const paymentMethodId = text(filters.paymentMethodId);
+  const staticQrOnly = text(filters.staticQrOnly) === "true";
   const cashierId = text(filters.cashierId);
   const status = text(filters.status);
 
@@ -383,6 +384,14 @@ function buildSalesQueries(
     queries.push(Query.equal("paymentMethodId", paymentMethodId));
   }
 
+  if (staticQrOnly) {
+    queries.push(Query.startsWith("$id", "static-"));
+  }
+
+  if (Array.isArray(staticQrSaleIds)) {
+    queries.push(buildStaticQrSaleIdsQuery(staticQrSaleIds));
+  }
+
   if (cashierId) {
     queries.push(Query.equal("cashierId", cashierId));
   }
@@ -405,6 +414,20 @@ function buildSalesQueries(
     offset,
     dateRange,
   };
+}
+
+export function buildStaticQrSaleIdsQuery(saleIds) {
+  if (!saleIds.length) {
+    return Query.equal("$id", "__no_static_qr_sales__");
+  }
+
+  const queries = [];
+
+  for (let index = 0; index < saleIds.length; index += 100) {
+    queries.push(Query.equal("$id", saleIds.slice(index, index + 100)));
+  }
+
+  return queries.length === 1 ? queries[0] : Query.or(queries);
 }
 
 function getSaleSummary(sales) {
@@ -590,9 +613,16 @@ async function assertQrHasNotBeenUsed(databases, branchId, qrId) {
   }
 }
 
-async function fetchSummarySales(databases, context, filters, timeZone) {
+async function fetchSummarySales(
+  databases,
+  context,
+  filters,
+  timeZone,
+  staticQrSaleIds,
+) {
   const { queries } = buildSalesQueries(context, filters, {
     paginate: false,
+    staticQrSaleIds,
     timeZone,
   });
   const documents = [];
@@ -621,6 +651,51 @@ async function fetchSummarySales(databases, context, filters, timeZone) {
   return documents
     .map(toSale)
     .filter((sale) => matchesSaleSearch(sale, filters.search));
+}
+
+async function resolveStaticQrSaleIds(databases, context, staticQrId) {
+  if (!staticQrId) {
+    return undefined;
+  }
+
+  const staticQr = await databases.getDocument({
+    databaseId,
+    collectionId: collections.staticQrs,
+    documentId: staticQrId,
+  });
+
+  if (!canAccessBranch(context, staticQr.branchId)) {
+    throw new ForbiddenError("No tienes acceso a este QR estático.");
+  }
+
+  const saleIds = [];
+  let offset = 0;
+
+  while (true) {
+    const result = await databases.listDocuments({
+      databaseId,
+      collectionId: collections.staticQrPayments,
+      queries: [
+        Query.equal("staticQrId", staticQrId),
+        Query.limit(500),
+        Query.offset(offset),
+      ],
+    });
+
+    saleIds.push(
+      ...result.documents
+        .map((payment) => text(payment.saleId))
+        .filter(Boolean),
+    );
+
+    if (result.documents.length < 500) {
+      break;
+    }
+
+    offset += result.documents.length;
+  }
+
+  return [...new Set(saleIds)];
 }
 
 export function getDefaultSalesDate(timeZone = DEFAULT_TIME_ZONE) {
@@ -677,8 +752,14 @@ export async function listSales(context, filters = {}) {
   const { databases } = createAdminClient(context.userAgent);
   const { timeZone } = await getTimeZoneSettings(context);
   const search = text(filters.search);
+  const staticQrSaleIds = await resolveStaticQrSaleIds(
+    databases,
+    context,
+    text(filters.staticQrId),
+  );
   const queryFilters = buildSalesQueries(context, filters, {
     paginate: !search,
+    staticQrSaleIds,
     timeZone,
   });
   const queries = search
@@ -707,6 +788,7 @@ export async function listSales(context, filters = {}) {
     context,
     { ...filters, search },
     timeZone,
+    staticQrSaleIds,
   );
 
   return {

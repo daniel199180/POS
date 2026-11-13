@@ -7,6 +7,7 @@ import {
   listSales,
 } from "@/lib/pos/sales";
 import { getTimeZoneSettings } from "@/lib/pos/settings";
+import { getStaticQrFilterOptions } from "@/lib/pos/static-qrs";
 
 export default async function SalesPage() {
   const context = await getCurrentUserContext();
@@ -23,21 +24,24 @@ export default async function SalesPage() {
     branchId: "",
     paymentType: "",
     paymentMethodId: "",
+    staticQrOnly: "",
+    staticQrId: "",
     cashierId: "",
     status: "",
     search: "",
     page: 1,
     pageSize: 25,
   };
-  const [options, initialData] = await Promise.all([
+  const [options, staticQrOptions, initialData] = await Promise.all([
     getSalesFilterOptions(context),
+    getStaticQrFilterOptions(context),
     listSales(context, initialFilters),
   ]);
 
   return (
     <SalesClient
       canCancel={context.isAdmin}
-      options={options}
+      options={{ ...options, staticQrs: staticQrOptions.qrs }}
       initialData={initialData}
       initialFilters={initialFilters}
       timeZone={timeZone}

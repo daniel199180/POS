@@ -8,10 +8,20 @@ import {
 import { getSaleOrigin, saleCategory } from "../src/lib/pos/sale-origin.js";
 import { getAuditChanges, withAudit } from "../src/lib/pos/audit-writer.js";
 import { getSalesAnalytics } from "../src/lib/pos/analytics.js";
-import { getIncomeCategoryTotals } from "../src/lib/pos/sales.js";
+import {
+  buildStaticQrSaleIdsQuery,
+  getIncomeCategoryTotals,
+} from "../src/lib/pos/sales.js";
 import { buildDailyIncomePdf } from "../src/lib/pos/daily-income-pdf.js";
 import { listAuditHistory } from "../src/lib/pos/audit.js";
 import { readReportDocuments } from "../src/lib/pos/report-data.js";
+import {
+  getPaymentMethodOptionLabel,
+  getStaticQrOptionLabel,
+  getVisiblePaymentMethods,
+  getVisibleStaticQrs,
+  prepareAppliedSalesFilters,
+} from "../src/lib/pos/sales-filter-options.js";
 import {
   parseReportRange,
   localReportDate,
@@ -43,6 +53,41 @@ const item = (saleId, subtotal, extra = {}) => ({
   quantity: 1,
   unitPrice: subtotal,
   ...extra,
+});
+
+test("sales payment methods follow the selected branch and identify global options", () => {
+  const branches = [
+    { id: "b1", name: "Online" },
+    { id: "b2", name: "La Paz" },
+  ];
+  const methods = [
+    { id: "m1", branchId: "b1", label: "QR" },
+    { id: "m2", branchId: "b2", label: "QR" },
+    { id: "m3", branchId: "b2", label: "Efectivo" },
+  ];
+
+  assert.deepEqual(
+    getVisiblePaymentMethods(methods, "b1").map((method) => method.id),
+    ["m1"],
+  );
+  assert.deepEqual(getVisiblePaymentMethods(methods), methods);
+  assert.equal(
+    getPaymentMethodOptionLabel(methods[0], branches),
+    "QR · Online",
+  );
+  assert.equal(getPaymentMethodOptionLabel(methods[0], branches, "b1"), "QR");
+  assert.deepEqual(prepareAppliedSalesFilters({ branchId: "b1", page: 4 }), {
+    branchId: "b1",
+    page: 1,
+  });
+  const staticQrs = [
+    { id: "q1", branchId: "b1", branchName: "Online", description: "Caja" },
+    { id: "q2", branchId: "b2", branchName: "La Paz", description: "Curso" },
+  ];
+  assert.deepEqual(getVisibleStaticQrs(staticQrs, "b1"), [staticQrs[0]]);
+  assert.equal(getStaticQrOptionLabel(staticQrs[0]), "Caja · Online");
+  assert.equal(getStaticQrOptionLabel(staticQrs[0], "b1"), "Caja");
+  assert.match(buildStaticQrSaleIdsQuery(["s1", "s2"]), /\"\$id\"/);
 });
 
 test("mixed sales count once, reconcile categories and exclude cancelled/refunded sales", () => {
