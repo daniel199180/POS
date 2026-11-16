@@ -3,12 +3,16 @@ import test from "node:test";
 import {
   buildEscPosReceipt,
   buildReceiptHtml,
+  getReceiptPrinterSettings,
   normalizeReceiptPrinterSettings,
+  saveReceiptPrinterSettings,
 } from "../src/lib/pos/receipt-printing.js";
 
 const sale = {
   saleNumber: "V-123",
+  branchId: "branch-centro",
   branchName: "Sucursal Centro",
+  companyName: "Empresa Demo",
   cashierName: "Ana",
   completedAt: "2026-11-06T14:30:00.000Z",
   paymentMethodType: "cash",
@@ -52,6 +56,9 @@ test("genera HTML seguro para papel térmico", () => {
   assert.doesNotMatch(html, /Café <grande>/);
   assert.match(html, /Bs 12\.50/);
   assert.match(html, /V-123/);
+  assert.match(html, /Empresa Demo/);
+  assert.match(html, /Sucursal: Sucursal Centro/);
+  assert.match(html, /padding-bottom: 10mm/);
 });
 
 test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
@@ -65,6 +72,55 @@ test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
 
   assert.ok(output.startsWith("\x1B\x70\x00\x19\xFA"));
   assert.ok(output.endsWith("\x1D\x56\x00"));
+  assert.ok(output.includes("\x1B\x64\x05"));
   assert.match(output, /Cafe <grande>/);
+  assert.match(output, /Empresa Demo/);
+  assert.match(output, /Sucursal: Sucursal Centro/);
+  assert.ok(output.indexOf("RECIBO DE PAGO") < output.indexOf("Empresa Demo"));
   assert.match(output, /TOTAL/);
+});
+
+test("guarda y recupera una impresora distinta por sucursal", () => {
+  const values = new Map();
+  const previousWindow = globalThis.window;
+  const previousCustomEvent = globalThis.CustomEvent;
+  globalThis.CustomEvent = class CustomEvent {
+    constructor(type, options) {
+      this.type = type;
+      this.detail = options?.detail;
+    }
+  };
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+    },
+    dispatchEvent: () => true,
+  };
+
+  try {
+    saveReceiptPrinterSettings("branch-a", {
+      enabled: true,
+      mode: "qz",
+      printerName: "Impresora A",
+    });
+    saveReceiptPrinterSettings("branch-b", {
+      enabled: true,
+      mode: "qz",
+      printerName: "Impresora B",
+    });
+
+    assert.equal(
+      getReceiptPrinterSettings("branch-a").printerName,
+      "Impresora A",
+    );
+    assert.equal(
+      getReceiptPrinterSettings("branch-b").printerName,
+      "Impresora B",
+    );
+    assert.equal(getReceiptPrinterSettings("branch-c").enabled, false);
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.CustomEvent = previousCustomEvent;
+  }
 });

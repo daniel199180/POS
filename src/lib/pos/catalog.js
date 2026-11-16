@@ -123,6 +123,14 @@ async function getBranches(databases) {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+export async function listPosBranches(context) {
+  const { databases } = createAdminClient(context.userAgent);
+  const branches = await getBranches(databases);
+  return context.isAdmin
+    ? branches
+    : branches.filter((branch) => canAccessBranch(context, branch.id));
+}
+
 async function getPaymentMethods(databases) {
   const result = await databases.listDocuments({
     databaseId,

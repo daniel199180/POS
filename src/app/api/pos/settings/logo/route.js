@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getApiErrorResponse, getCurrentUserContext } from "@/lib/pos/auth";
-import { deleteLogo, getLogoImage, uploadLogo } from "@/lib/pos/settings";
+import {
+  deleteLogo,
+  getLogoImage,
+  updateBrandSettings,
+  uploadLogo,
+} from "@/lib/pos/settings";
 
 export const runtime = "nodejs";
 
@@ -27,6 +32,18 @@ export async function POST(request) {
     const formData = await request.formData();
     const file = formData.get("logo");
     const settings = await uploadLogo(context, file);
+
+    return NextResponse.json({ settings });
+  } catch (error) {
+    return getApiErrorResponse(error);
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const context = await getCurrentUserContext({ redirectToLogin: false });
+    const input = await request.json();
+    const settings = await updateBrandSettings(context, input);
 
     return NextResponse.json({ settings });
   } catch (error) {

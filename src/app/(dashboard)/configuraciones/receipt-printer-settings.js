@@ -14,6 +14,8 @@ import {
 import {
   DEFAULT_RECEIPT_PRINTER_SETTINGS,
   getReceiptPrinterSettings,
+  getLegacyReceiptPrinterSettings,
+  hasReceiptPrinterSettings,
   listReceiptPrinters,
   normalizeReceiptPrinterSettings,
   printTestReceipt,
@@ -44,8 +46,16 @@ function Toggle({ checked, disabled, label, description, onChange }) {
   );
 }
 
-export default function ReceiptPrinterSettings({ canManage }) {
+export default function ReceiptPrinterSettings({
+  canManage,
+  branches = [],
+  companyName = "",
+}) {
+  const [selectedBranchId, setSelectedBranchId] = useState(
+    branches[0]?.id || "",
+  );
   const [settings, setSettings] = useState(DEFAULT_RECEIPT_PRINTER_SETTINGS);
+  const [legacySettings, setLegacySettings] = useState(null);
   const [printers, setPrinters] = useState([]);
   const [isLoadingPrinters, setIsLoadingPrinters] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -53,8 +63,19 @@ export default function ReceiptPrinterSettings({ canManage }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setSettings(getReceiptPrinterSettings());
-  }, []);
+    setSettings(getReceiptPrinterSettings(selectedBranchId));
+    setLegacySettings(
+      selectedBranchId && !hasReceiptPrinterSettings(selectedBranchId)
+        ? getLegacyReceiptPrinterSettings()
+        : null,
+    );
+    setMessage("");
+    setError("");
+  }, [selectedBranchId]);
+
+  const selectedBranch = branches.find(
+    (branch) => branch.id === selectedBranchId,
+  );
 
   function update(field, value) {
     setSettings((current) =>
@@ -97,8 +118,9 @@ export default function ReceiptPrinterSettings({ canManage }) {
 
     if (!canManage) return;
 
-    const saved = saveReceiptPrinterSettings(settings);
+    const saved = saveReceiptPrinterSettings(selectedBranchId, settings);
     setSettings(saved);
+    setLegacySettings(null);
     setError("");
     setMessage("Configuración de impresión guardada en esta computadora.");
   }
@@ -115,7 +137,11 @@ export default function ReceiptPrinterSettings({ canManage }) {
         ...settings,
         enabled: true,
       });
-      await printTestReceipt(testSettings);
+      await printTestReceipt(testSettings, {
+        branchId: selectedBranchId,
+        branchName: selectedBranch?.name || "Punto de venta",
+        companyName,
+      });
       setMessage(
         testSettings.mode === "browser"
           ? "Recibo preparado. Elige la impresora en el diálogo del sistema."
@@ -131,7 +157,7 @@ export default function ReceiptPrinterSettings({ canManage }) {
   }
 
   const directMode = settings.mode === "qz";
-  const disabled = !canManage;
+  const disabled = !canManage || !selectedBranchId;
 
   return (
     <form
@@ -149,8 +175,9 @@ export default function ReceiptPrinterSettings({ canManage }) {
             </p>
             <h2 className="mt-1 text-lg font-semibold">Impresora térmica</h2>
             <p className="mt-1 max-w-2xl text-sm text-neutral-500">
-              Compatible con impresoras pequeñas instaladas en Windows, macOS o
-              Linux. Esta configuración se guarda solo en esta computadora.
+              Cada sucursal usa su propia impresora en esta computadora. La
+              venta se envía únicamente a la impresora de la sucursal donde fue
+              emitida.
             </p>
           </div>
         </div>
@@ -175,6 +202,47 @@ export default function ReceiptPrinterSettings({ canManage }) {
         <div className="mt-4 flex items-start gap-2 rounded-md border border-red-900 bg-red-950 px-3 py-2.5 text-sm text-red-200">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           {error}
+        </div>
+      ) : null}
+
+      <label className="mt-5 block text-sm font-medium text-neutral-300">
+        Sucursal de esta impresora
+        <select
+          value={selectedBranchId}
+          disabled={!canManage || branches.length === 0}
+          onChange={(event) => setSelectedBranchId(event.target.value)}
+          className="mt-2 block h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-200 disabled:opacity-60"
+        >
+          {branches.length === 0 ? (
+            <option value="">No hay sucursales activas</option>
+          ) : null}
+          {branches.map((branch) => (
+            <option key={branch.id} value={branch.id}>
+              {branch.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {legacySettings ? (
+        <div className="mt-4 rounded-md border border-amber-900 bg-amber-950/40 p-3 text-sm text-amber-100">
+          <p>
+            Hay una configuración anterior sin sucursal. Por seguridad no se
+            usará hasta que la asignes a la sucursal correcta.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSettings(legacySettings);
+              setMessage(
+                "Configuración anterior cargada. Guárdala para asignarla a esta sucursal.",
+              );
+              setError("");
+            }}
+            className="mt-3 inline-flex h-9 items-center rounded-md border border-amber-800 px-3 text-xs font-semibold transition hover:bg-amber-900/50"
+          >
+            Usar configuración anterior aquí
+          </button>
         </div>
       ) : null}
 
@@ -314,6 +382,10 @@ export default function ReceiptPrinterSettings({ canManage }) {
           eliges cualquier impresora instalada y sus preferencias de papel.
         </p>
       )}
+
+      <p className="mt-4 text-xs text-neutral-500">
+        El aviso “Este recibo no tiene valor legal” aparecerá en cada recibo.
+      </p>
 
       <div
         className={`mt-4 grid gap-4 ${directMode ? "md:grid-cols-[140px_1fr]" : "grid-cols-1"}`}

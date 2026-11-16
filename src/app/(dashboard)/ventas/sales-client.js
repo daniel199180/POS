@@ -87,6 +87,7 @@ export default function SalesClient({
   initialData,
   initialFilters,
   timeZone = "America/La_Paz",
+  companyName = "",
 }) {
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
@@ -259,7 +260,7 @@ export default function SalesClient({
     setError("");
 
     try {
-      const result = await printReceipt(sale);
+      const result = await printReceipt({ ...sale, companyName });
       setMessage(
         result.mode === "browser"
           ? "Recibo preparado en el diálogo de impresión."

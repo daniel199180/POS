@@ -37,8 +37,12 @@ export default function SettingsClient({
   initialMcpSettings,
   canManage,
   canManageMcp,
+  branches,
 }) {
   const [settings, setSettings] = useState(initialSettings);
+  const [companyName, setCompanyName] = useState(
+    initialSettings.companyName || "",
+  );
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [message, setMessage] = useState("");
@@ -90,41 +94,61 @@ export default function SettingsClient({
     }
   }
 
-  async function uploadSelectedLogo(event) {
+  async function saveBrandSettings(event) {
     event.preventDefault();
 
-    if (!selectedFile || !canManage) {
+    if (!canManage) {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("logo", selectedFile);
     setIsSaving(true);
     setMessage("");
     setError("");
 
     try {
+      let nextSettings = settings;
+
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append("logo", selectedFile);
+        const uploadResponse = await fetch("/api/pos/settings/logo", {
+          method: "POST",
+          credentials: "same-origin",
+          body: formData,
+        });
+        const uploadPayload = await uploadResponse.json();
+        if (!uploadResponse.ok) {
+          throw new Error(
+            uploadPayload.message || "No se pudo guardar el logo.",
+          );
+        }
+        nextSettings = uploadPayload.settings;
+      }
+
       const response = await fetch("/api/pos/settings/logo", {
-        method: "POST",
+        method: "PATCH",
         credentials: "same-origin",
-        body: formData,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ companyName }),
       });
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.message || "No se pudo guardar el logo.");
+        throw new Error(payload.message || "No se pudo guardar la identidad.");
       }
 
-      setSettings(payload.settings);
+      nextSettings = payload.settings;
+      setSettings(nextSettings);
+      setCompanyName(nextSettings.companyName || "");
       setSelectedFile(null);
-      setMessage("Logo guardado.");
+      setMessage("Nombre de empresa y logo guardados.");
 
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
         setPreviewUrl("");
       }
     } catch (saveError) {
-      setError(saveError.message || "No se pudo guardar el logo.");
+      setError(saveError.message || "No se pudo guardar la identidad.");
     } finally {
       setIsSaving(false);
     }
@@ -324,19 +348,31 @@ export default function SettingsClient({
         </div>
 
         <form
-          onSubmit={uploadSelectedLogo}
+          onSubmit={saveBrandSettings}
           className="rounded-md border border-neutral-800 bg-neutral-900 p-4"
         >
           <div>
             <p className="text-xs font-medium text-neutral-500 uppercase">
-              Logo
+              Identidad de la empresa
             </p>
-            <h2 className="mt-1 text-lg font-semibold">
-              {logo ? "Editar logo" : "Subir logo"}
-            </h2>
+            <h2 className="mt-1 text-lg font-semibold">Nombre y logo</h2>
           </div>
 
           <label className="mt-5 block text-sm font-medium text-neutral-300">
+            Nombre de la empresa
+            <input
+              type="text"
+              value={companyName}
+              maxLength={100}
+              required
+              onChange={(event) => setCompanyName(event.target.value)}
+              disabled={!canManage || isSaving || isDeleting}
+              className="mt-2 block h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
+              placeholder="Nombre que aparecerá en los recibos"
+            />
+          </label>
+
+          <label className="mt-4 block text-sm font-medium text-neutral-300">
             Archivo de imagen
             <input
               type="file"
@@ -355,7 +391,14 @@ export default function SettingsClient({
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <button
               type="submit"
-              disabled={!canManage || !selectedFile || isSaving || isDeleting}
+              disabled={
+                !canManage ||
+                !companyName.trim() ||
+                (!selectedFile &&
+                  companyName.trim() === (settings.companyName || "")) ||
+                isSaving ||
+                isDeleting
+              }
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-neutral-100 px-4 text-sm font-semibold text-neutral-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
             >
               {isSaving ? (
@@ -365,7 +408,7 @@ export default function SettingsClient({
               ) : (
                 <ImageUp className="size-4" />
               )}
-              {logo ? "Guardar cambios" : "Subir logo"}
+              Guardar identidad
             </button>
 
             <button
@@ -436,7 +479,11 @@ export default function SettingsClient({
         </div>
       </form>
 
-      <ReceiptPrinterSettings canManage={canManage} />
+      <ReceiptPrinterSettings
+        canManage={canManage}
+        branches={branches}
+        companyName={settings.companyName || ""}
+      />
 
       {canManageMcp && mcpSettings ? (
         <section className="rounded-md border border-neutral-800 bg-neutral-900 p-4">

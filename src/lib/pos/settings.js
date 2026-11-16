@@ -101,6 +101,17 @@ function toLogoSettings(file) {
   };
 }
 
+function toBrandSettings(file, document) {
+  return {
+    logo: toLogoSettings(file),
+    companyName: String(document?.companyName || "")
+      .trim()
+      .slice(0, 100),
+    maxLogoSize: MAX_LOGO_SIZE_BYTES,
+    allowedLogoTypes: Array.from(allowedLogoTypes),
+  };
+}
+
 async function ensureLogoBucket(storage) {
   try {
     const bucket = await storage.getBucket({
@@ -156,14 +167,13 @@ async function getLogoFile(storage) {
 }
 
 const readLogoSettings = cache(async (userAgent = "") => {
-  const { storage } = createAdminClient(userAgent);
-  const logo = await getLogoFile(storage);
+  const { databases, storage } = createAdminClient(userAgent);
+  const [logo, document] = await Promise.all([
+    getLogoFile(storage),
+    getGlobalPosSettings(databases),
+  ]);
 
-  return {
-    logo: toLogoSettings(logo),
-    maxLogoSize: MAX_LOGO_SIZE_BYTES,
-    allowedLogoTypes: Array.from(allowedLogoTypes),
-  };
+  return toBrandSettings(logo, document);
 });
 
 export async function getLogoSettings(context) {
@@ -215,6 +225,51 @@ export async function updateTimeZoneSettings(context, input) {
   return toTimeZoneSettings(document);
 }
 
+export async function updateBrandSettings(context, input) {
+  assertCanManageSettings(context);
+
+  const companyName = String(input?.companyName || "").trim();
+  if (!companyName) {
+    throw inputError("Escribe el nombre de la empresa.");
+  }
+  if (companyName.length > 100) {
+    throw inputError(
+      "El nombre de la empresa no puede superar 100 caracteres.",
+    );
+  }
+
+  const { databases, storage } = createAdminClient(context.userAgent || "");
+  const existing = await getGlobalPosSettings(databases);
+  const data = {
+    products: existing?.products ?? true,
+    monthly: existing?.monthly ?? true,
+    custom: existing?.custom ?? true,
+    staticQr: existing?.staticQr ?? true,
+    links: existing?.links ?? true,
+    daily: existing?.daily ?? true,
+    timeZone: existing?.timeZone || DEFAULT_TIME_ZONE,
+    companyName,
+    updatedByUserId: context.user.id,
+  };
+  const document = existing
+    ? await databases.updateDocument({
+        databaseId: appwriteConfig.databaseId,
+        collectionId: appwriteConfig.collections.posUiSettings,
+        documentId: GLOBAL_POS_SETTINGS_ID,
+        data,
+      })
+    : await databases.createDocument({
+        databaseId: appwriteConfig.databaseId,
+        collectionId: appwriteConfig.collections.posUiSettings,
+        documentId: ID.custom(GLOBAL_POS_SETTINGS_ID),
+        data,
+        permissions: [],
+      });
+  const logo = await getLogoFile(storage);
+
+  return toBrandSettings(logo, document);
+}
+
 export async function getLogoImage(context) {
   const { storage } = createAdminClient(context.userAgent);
   const logo = await getLogoFile(storage);
@@ -253,7 +308,7 @@ export async function uploadLogo(context, file) {
     throw inputError("El logo no puede superar 2 MB.");
   }
 
-  const { storage } = createAdminClient(context.userAgent);
+  const { databases, storage } = createAdminClient(context.userAgent);
   await ensureLogoBucket(storage);
 
   try {
@@ -275,17 +330,14 @@ export async function uploadLogo(context, file) {
     permissions: [],
   });
 
-  return {
-    logo: toLogoSettings(uploaded),
-    maxLogoSize: MAX_LOGO_SIZE_BYTES,
-    allowedLogoTypes: Array.from(allowedLogoTypes),
-  };
+  const document = await getGlobalPosSettings(databases);
+  return toBrandSettings(uploaded, document);
 }
 
 export async function deleteLogo(context) {
   assertCanManageSettings(context);
 
-  const { storage } = createAdminClient(context.userAgent);
+  const { databases, storage } = createAdminClient(context.userAgent);
 
   try {
     await storage.deleteFile({
@@ -298,9 +350,6 @@ export async function deleteLogo(context) {
     }
   }
 
-  return {
-    logo: null,
-    maxLogoSize: MAX_LOGO_SIZE_BYTES,
-    allowedLogoTypes: Array.from(allowedLogoTypes),
-  };
+  const document = await getGlobalPosSettings(databases);
+  return toBrandSettings(null, document);
 }

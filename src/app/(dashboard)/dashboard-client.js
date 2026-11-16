@@ -1191,7 +1191,10 @@ export default function DashboardClient({
     setReceiptPrintMessage("");
 
     try {
-      const result = await printReceipt(receipt);
+      const result = await printReceipt({
+        ...receipt,
+        companyName: settings.companyName || "",
+      });
       setReceiptPrintMessage(
         result.mode === "browser"
           ? "Recibo preparado en el diálogo de impresión."
@@ -1255,7 +1258,9 @@ export default function DashboardClient({
       const completedSale = {
         id: payload.sale.id,
         saleNumber: payload.sale.saleNumber,
+        branchId: selectedBranchId,
         branchName: selectedBranch?.name || "Punto de venta",
+        companyName: settings.companyName || "",
         cashierName: user.name || user.email,
         subtotal: totals.subtotal,
         discount: totals.discount,
@@ -1295,7 +1300,7 @@ export default function DashboardClient({
       publishCustomerDisplaySnapshot(completedSnapshot);
       playPaymentSuccessSound();
       setReceiptPrintMessage("");
-      if (shouldAutoPrintReceipt()) {
+      if (shouldAutoPrintReceipt(selectedBranchId)) {
         try {
           const result = await printReceipt(completedSale);
           setReceiptPrintMessage(

@@ -1,4 +1,5 @@
-export const RECEIPT_PRINTER_STORAGE_KEY = "pos.receipt-printer.v1";
+export const RECEIPT_PRINTER_STORAGE_KEY = "pos.receipt-printers.v2";
+export const LEGACY_RECEIPT_PRINTER_STORAGE_KEY = "pos.receipt-printer.v1";
 
 export const DEFAULT_RECEIPT_PRINTER_SETTINGS = Object.freeze({
   enabled: false,
@@ -38,32 +39,77 @@ export function normalizeReceiptPrinterSettings(value = {}) {
   };
 }
 
-export function getReceiptPrinterSettings() {
+function normalizeBranchId(value) {
+  return String(value || "")
+    .trim()
+    .slice(0, 36);
+}
+
+function getStoredPrinterSettingsByBranch() {
   if (typeof window === "undefined") {
-    return { ...DEFAULT_RECEIPT_PRINTER_SETTINGS };
+    return {};
   }
 
   try {
     const stored = window.localStorage.getItem(RECEIPT_PRINTER_STORAGE_KEY);
-
-    return normalizeReceiptPrinterSettings(
-      stored ? JSON.parse(stored) : DEFAULT_RECEIPT_PRINTER_SETTINGS,
-    );
+    const parsed = stored ? JSON.parse(stored) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
   } catch {
-    return { ...DEFAULT_RECEIPT_PRINTER_SETTINGS };
+    return {};
   }
 }
 
-export function saveReceiptPrinterSettings(value) {
+export function getReceiptPrinterSettings(branchId) {
+  const safeBranchId = normalizeBranchId(branchId);
+  if (!safeBranchId) {
+    return { ...DEFAULT_RECEIPT_PRINTER_SETTINGS };
+  }
+
+  return normalizeReceiptPrinterSettings(
+    getStoredPrinterSettingsByBranch()[safeBranchId],
+  );
+}
+
+export function hasReceiptPrinterSettings(branchId) {
+  const safeBranchId = normalizeBranchId(branchId);
+  return Boolean(
+    safeBranchId && getStoredPrinterSettingsByBranch()[safeBranchId],
+  );
+}
+
+export function getLegacyReceiptPrinterSettings() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const stored = window.localStorage.getItem(
+      LEGACY_RECEIPT_PRINTER_STORAGE_KEY,
+    );
+    return stored ? normalizeReceiptPrinterSettings(JSON.parse(stored)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveReceiptPrinterSettings(branchId, value) {
+  const safeBranchId = normalizeBranchId(branchId);
+  if (!safeBranchId) {
+    throw new Error("Selecciona la sucursal de esta impresora.");
+  }
+
   const settings = normalizeReceiptPrinterSettings(value);
 
   if (typeof window !== "undefined") {
+    const settingsByBranch = getStoredPrinterSettingsByBranch();
     window.localStorage.setItem(
       RECEIPT_PRINTER_STORAGE_KEY,
-      JSON.stringify(settings),
+      JSON.stringify({ ...settingsByBranch, [safeBranchId]: settings }),
     );
     window.dispatchEvent(
-      new CustomEvent("pos:receipt-printer-settings", { detail: settings }),
+      new CustomEvent("pos:receipt-printer-settings", {
+        detail: { branchId: safeBranchId, settings },
+      }),
     );
   }
 
@@ -104,7 +150,11 @@ function receiptDate(value) {
 function normalizeReceipt(receipt = {}) {
   return {
     saleNumber: String(receipt.saleNumber || receipt.id || "SIN-NUMERO"),
+    branchId: String(receipt.branchId || ""),
     branchName: String(receipt.branchName || "Punto de venta"),
+    companyName: String(receipt.companyName || "")
+      .trim()
+      .slice(0, 100),
     cashierName: String(receipt.cashierName || "-"),
     customerName: String(receipt.senderName || receipt.customerName || ""),
     completedAt: receipt.completedAt || new Date().toISOString(),
@@ -157,10 +207,10 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
     <meta charset="utf-8">
     <title>Recibo ${escapeHtml(sale.saleNumber)}</title>
     <style>
-      @page { size: ${width}mm auto; margin: 2mm; }
+      @page { size: ${width}mm auto; margin: 2mm 2mm 8mm; }
       * { box-sizing: border-box; }
       html, body { width: ${width - 4}mm; margin: 0; padding: 0; }
-      body { color: #000; background: #fff; font: 12px/1.32 Arial, sans-serif; }
+      body { padding-bottom: 10mm; color: #000; background: #fff; font: 12px/1.32 Arial, sans-serif; }
       h1 { margin: 0 0 4px; font-size: 16px; text-align: center; }
       p { margin: 2px 0; }
       .center { text-align: center; }
@@ -174,11 +224,12 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
       .totals { margin-left: auto; width: 76%; }
       .totals td:last-child { text-align: right; white-space: nowrap; }
       .total { border-top: 1px solid #000; font-size: 14px; font-weight: 700; }
-      .footer { margin-top: 10px; text-align: center; white-space: pre-wrap; }
+      .footer { margin: 10px 0 4mm; text-align: center; white-space: pre-wrap; }
     </style>
   </head>
   <body>
-    <h1>${escapeHtml(sale.branchName)}</h1>
+    <h1>${escapeHtml(sale.companyName || sale.branchName)}</h1>
+    ${sale.companyName ? `<p class="center"><strong>Sucursal: ${escapeHtml(sale.branchName)}</strong></p>` : ""}
     <p class="center">RECIBO DE PAGO</p>
     <div class="rule"></div>
     <p><strong>Venta:</strong> ${escapeHtml(sale.saleNumber)}</p>
@@ -201,6 +252,7 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
     <div class="rule"></div>
     <p><strong>Pago:</strong> ${escapeHtml(sale.paymentLabel)}</p>
     ${sale.notes ? `<p><strong>Notas:</strong> ${escapeHtml(sale.notes)}</p>` : ""}
+    <p class="footer"><strong>Este recibo no tiene valor legal.</strong></p>
     ${settings.footer ? `<p class="footer">${escapeHtml(settings.footer)}</p>` : ""}
   </body>
 </html>`;
@@ -265,10 +317,12 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
   const lines = [
     "\x1B\x40",
     "\x1B\x61\x01",
-    "\x1B\x45\x01",
-    `${ascii(sale.branchName)}\n`,
-    "\x1B\x45\x00",
+    "\n",
     "RECIBO DE PAGO\n",
+    "\x1B\x45\x01",
+    `${ascii(sale.companyName || sale.branchName)}\n`,
+    "\x1B\x45\x00",
+    ...(sale.companyName ? [`Sucursal: ${ascii(sale.branchName)}\n`] : []),
     "\x1B\x61\x00",
     `${divider}\n`,
     `Venta: ${ascii(sale.saleNumber)}\n`,
@@ -308,6 +362,11 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
   }
   lines.push(`${divider}\n`, `Pago: ${ascii(sale.paymentLabel)}\n`);
   if (sale.notes) lines.push(`Notas: ${ascii(sale.notes)}\n`);
+  lines.push(
+    "\x1B\x61\x01",
+    "Este recibo no tiene valor legal.\n",
+    "\x1B\x61\x00",
+  );
   if (settings.footer) {
     lines.push(
       "\x1B\x61\x01",
@@ -315,7 +374,7 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
       "\x1B\x61\x00",
     );
   }
-  lines.push("\n\n\n");
+  lines.push("\n", "\x1B\x64\x05");
 
   if (settings.openDrawer && sale.paymentType === "cash") {
     lines.unshift("\x1B\x70\x00\x19\xFA");
@@ -394,12 +453,17 @@ function printInBrowser(receipt, settings) {
 }
 
 export async function printReceipt(receipt, settingsValue) {
+  const branchId = normalizeBranchId(receipt?.branchId);
   const settings = normalizeReceiptPrinterSettings(
-    settingsValue || getReceiptPrinterSettings(),
+    settingsValue || getReceiptPrinterSettings(branchId),
   );
 
   if (!settings.enabled) {
-    throw new Error("Activa la impresora de recibos en Configuraciones.");
+    throw new Error(
+      branchId
+        ? "Configura y activa la impresora de esta sucursal."
+        : "La venta no identifica la sucursal de impresión.",
+    );
   }
 
   if (settings.mode === "browser") {
@@ -445,18 +509,23 @@ export async function printReceipt(receipt, settingsValue) {
   return { mode: "qz", printerName: settings.printerName };
 }
 
-export function shouldAutoPrintReceipt() {
-  const settings = getReceiptPrinterSettings();
+export function shouldAutoPrintReceipt(branchId) {
+  const settings = getReceiptPrinterSettings(branchId);
   return settings.enabled && settings.autoPrint;
 }
 
-export async function printTestReceipt(settingsValue) {
+export async function printTestReceipt(
+  settingsValue,
+  { branchId = "test", branchName = "Punto de venta", companyName = "" } = {},
+) {
   const now = new Date();
 
   return printReceipt(
     {
       saleNumber: "PRUEBA-001",
-      branchName: "Punto de venta",
+      branchId,
+      branchName,
+      companyName,
       cashierName: "Impresión de prueba",
       completedAt: now.toISOString(),
       paymentMethodType: "cash",

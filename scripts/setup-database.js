@@ -523,6 +523,7 @@ const collections = [
       { type: "boolean", key: "links", required: true },
       { type: "boolean", key: "daily", required: true },
       { type: "string", key: "timeZone", size: 100, required: false },
+      { type: "string", key: "companyName", size: 100, required: false },
       {
         type: "string",
         key: "updatedByUserId",

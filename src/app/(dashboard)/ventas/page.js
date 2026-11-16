@@ -6,7 +6,7 @@ import {
   getSalesFilterOptions,
   listSales,
 } from "@/lib/pos/sales";
-import { getTimeZoneSettings } from "@/lib/pos/settings";
+import { getLogoSettings, getTimeZoneSettings } from "@/lib/pos/settings";
 import { getStaticQrFilterOptions } from "@/lib/pos/static-qrs";
 
 export default async function SalesPage() {
@@ -16,7 +16,10 @@ export default async function SalesPage() {
     redirect("/");
   }
 
-  const { timeZone } = await getTimeZoneSettings(context);
+  const [{ timeZone }, brandSettings] = await Promise.all([
+    getTimeZoneSettings(context),
+    getLogoSettings(context),
+  ]);
   const today = getDefaultSalesDate(timeZone);
   const initialFilters = {
     dateFrom: today,
@@ -45,6 +48,7 @@ export default async function SalesPage() {
       initialData={initialData}
       initialFilters={initialFilters}
       timeZone={timeZone}
+      companyName={brandSettings.companyName}
     />
   );
 }
