@@ -37,6 +37,7 @@ import {
 } from "@/lib/pos/customer-display";
 import {
   printReceipt,
+  setActiveReceiptBranchId,
   shouldAutoPrintReceipt,
 } from "@/lib/pos/receipt-printing";
 
@@ -387,6 +388,10 @@ export default function DashboardClient({
       catalog.branches[0],
     [catalog.branches, selectedBranchId],
   );
+
+  useEffect(() => {
+    if (selectedBranchId) setActiveReceiptBranchId(selectedBranchId);
+  }, [selectedBranchId]);
 
   const branchPaymentMethods = useMemo(
     () =>

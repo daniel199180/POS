@@ -365,7 +365,7 @@ export default function ReceiptPrinterSettings({
               disabled={disabled || !settings.escPos}
               onChange={(value) => update("cutPaper", value)}
               label="Cortar papel"
-              description="Envía el comando de corte al terminar."
+              description="Separa el original de la copia y corta nuevamente al finalizar."
             />
             <Toggle
               checked={settings.openDrawer}
@@ -392,16 +392,16 @@ export default function ReceiptPrinterSettings({
       >
         {directMode ? (
           <label className="block text-sm font-medium text-neutral-300">
-            Copias
+            Juegos impresos
             <select
               value={settings.copies}
               disabled={disabled}
               onChange={(event) => update("copies", event.target.value)}
               className="mt-2 block h-11 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-200 disabled:opacity-60"
             >
-              <option value="1">1 copia</option>
-              <option value="2">2 copias</option>
-              <option value="3">3 copias</option>
+              <option value="1">1 juego: original + copia</option>
+              <option value="2">2 juegos</option>
+              <option value="3">3 juegos</option>
             </select>
           </label>
         ) : null}

@@ -294,6 +294,33 @@ async function fetchSaleItemsBySaleIds(databases, saleIds) {
   return itemsBySaleId;
 }
 
+export async function getSaleReceipt(context, saleId) {
+  const safeSaleId = text(saleId);
+
+  if (!safeSaleId) {
+    throw inputError("La venta del recibo no es valida.");
+  }
+
+  const { databases } = createAdminClient(context.userAgent);
+  const document = await databases.getDocument({
+    databaseId,
+    collectionId: collections.sales,
+    documentId: safeSaleId,
+  });
+  const sale = toSale(document);
+
+  if (!canAccessBranch(context, sale.branchId)) {
+    throw new ForbiddenError("No tienes acceso al recibo de esta sucursal.");
+  }
+
+  const itemsBySaleId = await fetchSaleItemsBySaleIds(databases, [sale.id]);
+  return {
+    ...sale,
+    items: itemsBySaleId.get(sale.id) || [],
+    origin: getSaleOrigin(sale, itemsBySaleId.get(sale.id) || []),
+  };
+}
+
 function matchesSaleSearch(sale, search) {
   const term = text(search).toLowerCase();
 

@@ -49,6 +49,7 @@ function loadComponent(name) {
 }
 
 const PaymentLinksClient = loadComponent("payment-links-client");
+const PaymentLinksHistory = loadComponent("payment-links-history");
 const PaymentLinkCreator = loadComponent("payment-link-creator");
 const StaticPaymentQrClient = loadComponent("static-payment-qr-client");
 const DashboardClient = loadComponent("dashboard-client");
@@ -93,6 +94,33 @@ test("payment links tab opens before a first link exists", () => {
   assert.ok(
     buttons(html).every((button) => button.label !== "Generar enlace de pago"),
   );
+});
+
+test("paid payment links expose receipt status and manual printing", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(PaymentLinksHistory, {
+      branchName: "Sucursal de prueba",
+      links: [
+        {
+          id: "link-paid",
+          status: "paid",
+          saleId: "sale-paid",
+          saleNumber: "V-001",
+          receiptPrintStatus: "failed",
+          sharePath: "/pagar/test",
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date().toISOString(),
+          total: 15,
+          items: [{ quantity: 1, name: "Cobro personalizado" }],
+        },
+      ],
+      onClose() {},
+      onPrint() {},
+    }),
+  );
+  assert.match(html, /Imprimir recibo V-001/);
+  assert.match(html, /Recibo:.*error, reintentar/s);
+  assert.match(html, /Cobro personalizado/);
 });
 
 test("static QR tab uses the active branch and exposes payment history", () => {

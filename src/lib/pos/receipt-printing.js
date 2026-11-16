@@ -1,5 +1,7 @@
 export const RECEIPT_PRINTER_STORAGE_KEY = "pos.receipt-printers.v2";
 export const LEGACY_RECEIPT_PRINTER_STORAGE_KEY = "pos.receipt-printer.v1";
+export const RECEIPT_WORKSTATION_STORAGE_KEY = "pos.receipt-workstation.v1";
+export const ACTIVE_RECEIPT_BRANCH_STORAGE_KEY = "pos.active-receipt-branch.v1";
 
 export const DEFAULT_RECEIPT_PRINTER_SETTINGS = Object.freeze({
   enabled: false,
@@ -76,6 +78,35 @@ export function hasReceiptPrinterSettings(branchId) {
   const safeBranchId = normalizeBranchId(branchId);
   return Boolean(
     safeBranchId && getStoredPrinterSettingsByBranch()[safeBranchId],
+  );
+}
+
+export function getReceiptWorkstationId() {
+  if (typeof window === "undefined") return "";
+  const stored = String(
+    window.localStorage.getItem(RECEIPT_WORKSTATION_STORAGE_KEY) || "",
+  ).trim();
+  if (stored) return stored;
+  const id = `pos-${
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  }`;
+  window.localStorage.setItem(RECEIPT_WORKSTATION_STORAGE_KEY, id);
+  return id;
+}
+
+export function getActiveReceiptBranchId(fallback = "") {
+  if (typeof window === "undefined") return fallback;
+  return (
+    window.localStorage.getItem(ACTIVE_RECEIPT_BRANCH_STORAGE_KEY) || fallback
+  );
+}
+
+export function setActiveReceiptBranchId(branchId) {
+  if (typeof window === "undefined" || !branchId) return;
+  window.localStorage.setItem(ACTIVE_RECEIPT_BRANCH_STORAGE_KEY, branchId);
+  window.dispatchEvent(
+    new CustomEvent("pos:active-receipt-branch", { detail: { branchId } }),
   );
 }
 
@@ -200,6 +231,36 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
         </tr>`,
     )
     .join("");
+  const receiptBody = (copyLabel) => `
+    <section class="receipt">
+      <h1>${escapeHtml(sale.companyName || sale.branchName)}</h1>
+      ${sale.companyName ? `<p class="center"><strong>Sucursal: ${escapeHtml(sale.branchName)}</strong></p>` : ""}
+      <p class="center">RECIBO DE PAGO</p>
+      <p class="copy-label">${escapeHtml(copyLabel)}</p>
+      <div class="rule"></div>
+      <p><strong>Venta:</strong> ${escapeHtml(sale.saleNumber)}</p>
+      <p><strong>Fecha:</strong> ${escapeHtml(receiptDate(sale.completedAt))}</p>
+      <p><strong>Cajero:</strong> ${escapeHtml(sale.cashierName)}</p>
+      ${sale.customerName ? `<p><strong>Cliente:</strong> ${escapeHtml(sale.customerName)}</p>` : ""}
+      <div class="rule"></div>
+      <table>
+        <thead><tr><th>Detalle</th><th class="qty">Cant.</th><th class="money">Importe</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3">Sin detalle de productos</td></tr>'}</tbody>
+      </table>
+      <div class="rule"></div>
+      <table class="totals">
+        <tr><td>Subtotal</td><td>${escapeHtml(amount(sale.subtotal))}</td></tr>
+        ${sale.discount ? `<tr><td>Descuento</td><td>-${escapeHtml(amount(sale.discount))}</td></tr>` : ""}
+        <tr class="total"><td>Total</td><td>${escapeHtml(amount(sale.total))}</td></tr>
+        <tr><td>Recibido</td><td>${escapeHtml(amount(sale.amountPaid))}</td></tr>
+        ${sale.change ? `<tr><td>Cambio</td><td>${escapeHtml(amount(sale.change))}</td></tr>` : ""}
+      </table>
+      <div class="rule"></div>
+      <p><strong>Pago:</strong> ${escapeHtml(sale.paymentLabel)}</p>
+      ${sale.notes ? `<p><strong>Notas:</strong> ${escapeHtml(sale.notes)}</p>` : ""}
+      <p class="footer"><strong>Este recibo no tiene valor legal.</strong></p>
+      ${settings.footer ? `<p class="footer">${escapeHtml(settings.footer)}</p>` : ""}
+    </section>`;
 
   return `<!doctype html>
 <html lang="es">
@@ -225,35 +286,13 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
       .totals td:last-child { text-align: right; white-space: nowrap; }
       .total { border-top: 1px solid #000; font-size: 14px; font-weight: 700; }
       .footer { margin: 10px 0 4mm; text-align: center; white-space: pre-wrap; }
+      .copy-label { margin: 5px 0 0; text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .12em; }
+      .receipt + .receipt { margin-top: 8mm; padding-top: 5mm; border-top: 2px dashed #000; }
     </style>
   </head>
   <body>
-    <h1>${escapeHtml(sale.companyName || sale.branchName)}</h1>
-    ${sale.companyName ? `<p class="center"><strong>Sucursal: ${escapeHtml(sale.branchName)}</strong></p>` : ""}
-    <p class="center">RECIBO DE PAGO</p>
-    <div class="rule"></div>
-    <p><strong>Venta:</strong> ${escapeHtml(sale.saleNumber)}</p>
-    <p><strong>Fecha:</strong> ${escapeHtml(receiptDate(sale.completedAt))}</p>
-    <p><strong>Cajero:</strong> ${escapeHtml(sale.cashierName)}</p>
-    ${sale.customerName ? `<p><strong>Cliente:</strong> ${escapeHtml(sale.customerName)}</p>` : ""}
-    <div class="rule"></div>
-    <table>
-      <thead><tr><th>Detalle</th><th class="qty">Cant.</th><th class="money">Importe</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="3">Sin detalle de productos</td></tr>'}</tbody>
-    </table>
-    <div class="rule"></div>
-    <table class="totals">
-      <tr><td>Subtotal</td><td>${escapeHtml(amount(sale.subtotal))}</td></tr>
-      ${sale.discount ? `<tr><td>Descuento</td><td>-${escapeHtml(amount(sale.discount))}</td></tr>` : ""}
-      <tr class="total"><td>Total</td><td>${escapeHtml(amount(sale.total))}</td></tr>
-      <tr><td>Recibido</td><td>${escapeHtml(amount(sale.amountPaid))}</td></tr>
-      ${sale.change ? `<tr><td>Cambio</td><td>${escapeHtml(amount(sale.change))}</td></tr>` : ""}
-    </table>
-    <div class="rule"></div>
-    <p><strong>Pago:</strong> ${escapeHtml(sale.paymentLabel)}</p>
-    ${sale.notes ? `<p><strong>Notas:</strong> ${escapeHtml(sale.notes)}</p>` : ""}
-    <p class="footer"><strong>Este recibo no tiene valor legal.</strong></p>
-    ${settings.footer ? `<p class="footer">${escapeHtml(settings.footer)}</p>` : ""}
+    ${receiptBody("ORIGINAL")}
+    ${receiptBody("COPIA")}
   </body>
 </html>`;
 }
@@ -314,66 +353,80 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
   const sale = normalizeReceipt(receipt);
   const columns = settings.paperWidth === "58" ? 32 : 48;
   const divider = "-".repeat(columns);
-  const lines = [
-    "\x1B\x40",
-    "\x1B\x61\x01",
-    "\n",
-    "RECIBO DE PAGO\n",
-    "\x1B\x45\x01",
-    `${ascii(sale.companyName || sale.branchName)}\n`,
-    "\x1B\x45\x00",
-    ...(sale.companyName ? [`Sucursal: ${ascii(sale.branchName)}\n`] : []),
-    "\x1B\x61\x00",
-    `${divider}\n`,
-    `Venta: ${ascii(sale.saleNumber)}\n`,
-    `Fecha: ${ascii(receiptDate(sale.completedAt))}\n`,
-    `Cajero: ${ascii(sale.cashierName)}\n`,
-  ];
+  const copyLines = (copyLabel, leadingBlank = false) => {
+    const lines = [
+      "\x1B\x61\x01",
+      ...(leadingBlank ? ["\n"] : []),
+      "RECIBO DE PAGO\n",
+      "\x1B\x45\x01",
+      `${ascii(sale.companyName || sale.branchName)}\n`,
+      "\x1B\x45\x00",
+      ...(sale.companyName ? [`Sucursal: ${ascii(sale.branchName)}\n`] : []),
+      "\x1B\x45\x01",
+      `*** ${ascii(copyLabel)} ***\n`,
+      "\x1B\x45\x00",
+      "\x1B\x61\x00",
+      `${divider}\n`,
+      `Venta: ${ascii(sale.saleNumber)}\n`,
+      `Fecha: ${ascii(receiptDate(sale.completedAt))}\n`,
+      `Cajero: ${ascii(sale.cashierName)}\n`,
+    ];
 
-  if (sale.customerName) lines.push(`Cliente: ${ascii(sale.customerName)}\n`);
-  lines.push(`${divider}\n`);
+    if (sale.customerName) lines.push(`Cliente: ${ascii(sale.customerName)}\n`);
+    lines.push(`${divider}\n`);
 
-  for (const item of sale.items) {
-    lines.push(`${wrap(item.name, columns).join("\n")}\n`);
+    for (const item of sale.items) {
+      lines.push(`${wrap(item.name, columns).join("\n")}\n`);
+      lines.push(
+        `${twoColumns(`${item.quantity} x ${amount(item.unitPrice)}`, amount(item.subtotal), columns)}\n`,
+      );
+    }
+
+    if (!sale.items.length) lines.push("Sin detalle de productos\n");
+
     lines.push(
-      `${twoColumns(`${item.quantity} x ${amount(item.unitPrice)}`, amount(item.subtotal), columns)}\n`,
+      `${divider}\n`,
+      `${twoColumns("Subtotal", amount(sale.subtotal), columns)}\n`,
     );
-  }
-
-  if (!sale.items.length) lines.push("Sin detalle de productos\n");
-
-  lines.push(
-    `${divider}\n`,
-    `${twoColumns("Subtotal", amount(sale.subtotal), columns)}\n`,
-  );
-  if (sale.discount) {
+    if (sale.discount) {
+      lines.push(
+        `${twoColumns("Descuento", `-${amount(sale.discount)}`, columns)}\n`,
+      );
+    }
     lines.push(
-      `${twoColumns("Descuento", `-${amount(sale.discount)}`, columns)}\n`,
+      "\x1B\x45\x01",
+      `${twoColumns("TOTAL", amount(sale.total), columns)}\n`,
+      "\x1B\x45\x00",
+      `${twoColumns("Recibido", amount(sale.amountPaid), columns)}\n`,
     );
-  }
-  lines.push(
-    "\x1B\x45\x01",
-    `${twoColumns("TOTAL", amount(sale.total), columns)}\n`,
-    "\x1B\x45\x00",
-    `${twoColumns("Recibido", amount(sale.amountPaid), columns)}\n`,
-  );
-  if (sale.change) {
-    lines.push(`${twoColumns("Cambio", amount(sale.change), columns)}\n`);
-  }
-  lines.push(`${divider}\n`, `Pago: ${ascii(sale.paymentLabel)}\n`);
-  if (sale.notes) lines.push(`Notas: ${ascii(sale.notes)}\n`);
-  lines.push(
-    "\x1B\x61\x01",
-    "Este recibo no tiene valor legal.\n",
-    "\x1B\x61\x00",
-  );
-  if (settings.footer) {
+    if (sale.change) {
+      lines.push(`${twoColumns("Cambio", amount(sale.change), columns)}\n`);
+    }
+    lines.push(`${divider}\n`, `Pago: ${ascii(sale.paymentLabel)}\n`);
+    if (sale.notes) lines.push(`Notas: ${ascii(sale.notes)}\n`);
     lines.push(
       "\x1B\x61\x01",
-      `${wrap(settings.footer, columns).join("\n")}\n`,
+      "Este recibo no tiene valor legal.\n",
       "\x1B\x61\x00",
     );
-  }
+    if (settings.footer) {
+      lines.push(
+        "\x1B\x61\x01",
+        `${wrap(settings.footer, columns).join("\n")}\n`,
+        "\x1B\x61\x00",
+      );
+    }
+    return lines;
+  };
+
+  const lines = [
+    "\x1B\x40",
+    ...copyLines("ORIGINAL", true),
+    ...(settings.cutPaper
+      ? ["\n", "\x1B\x64\x05", "\x1D\x56\x00", "\x1B\x40", "\n"]
+      : ["\n\n", "\x1B\x61\x01", `${divider}\n`, "\x1B\x61\x00", "\n"]),
+    ...copyLines("COPIA"),
+  ];
   lines.push("\n", "\x1B\x64\x05");
 
   if (settings.openDrawer && sale.paymentType === "cash") {

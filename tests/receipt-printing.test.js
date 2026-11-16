@@ -59,6 +59,11 @@ test("genera HTML seguro para papel térmico", () => {
   assert.match(html, /Empresa Demo/);
   assert.match(html, /Sucursal: Sucursal Centro/);
   assert.match(html, /padding-bottom: 10mm/);
+  assert.equal((html.match(/class="receipt"/g) || []).length, 2);
+  assert.equal((html.match(/RECIBO DE PAGO/g) || []).length, 2);
+  assert.match(html, />ORIGINAL</);
+  assert.match(html, />COPIA</);
+  assert.match(html, /receipt \+ \.receipt/);
 });
 
 test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
@@ -77,7 +82,27 @@ test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
   assert.match(output, /Empresa Demo/);
   assert.match(output, /Sucursal: Sucursal Centro/);
   assert.ok(output.indexOf("RECIBO DE PAGO") < output.indexOf("Empresa Demo"));
+  assert.equal((output.match(/RECIBO DE PAGO/g) || []).length, 2);
+  assert.equal((output.match(/\*\*\* ORIGINAL \*\*\*/g) || []).length, 1);
+  assert.equal((output.match(/\*\*\* COPIA \*\*\*/g) || []).length, 1);
+  assert.equal((output.match(/\x1D\x56\x00/g) || []).length, 2);
+  assert.ok(
+    output.indexOf("*** ORIGINAL ***") < output.indexOf("\x1D\x56\x00"),
+  );
+  assert.ok(output.indexOf("\x1D\x56\x00") < output.indexOf("*** COPIA ***"));
   assert.match(output, /TOTAL/);
+});
+
+test("mantiene original y copia unidos cuando el corte está desactivado", () => {
+  const output = buildEscPosReceipt(sale, {
+    mode: "qz",
+    escPos: true,
+    paperWidth: "58",
+    cutPaper: false,
+  });
+
+  assert.equal((output.match(/\x1D\x56\x00/g) || []).length, 0);
+  assert.match(output, /\*\*\* ORIGINAL \*\*\*[\s\S]*\*\*\* COPIA \*\*\*/);
 });
 
 test("guarda y recupera una impresora distinta por sucursal", () => {

@@ -20,6 +20,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import ReceiptPrintMonitor from "./receipt-print-monitor";
 
 const navigation = [
   {
@@ -182,6 +183,7 @@ export default function DashboardShell({ user, profile, settings, children }) {
 
   return (
     <main className="min-h-[100dvh] bg-neutral-950 text-neutral-100">
+      <ReceiptPrintMonitor defaultBranchId={profile.branchId || ""} />
       <div className="flex min-h-[100dvh]">
         <aside
           className={`sticky top-0 hidden h-[100dvh] self-start border-r border-neutral-800 bg-neutral-950 transition-[width] duration-200 lg:block ${

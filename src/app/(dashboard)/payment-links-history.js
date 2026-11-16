@@ -5,6 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Loader2,
+  Printer,
   RefreshCw,
   X,
 } from "lucide-react";
@@ -48,6 +50,8 @@ export default function PaymentLinksHistory({
   onNext,
   onPrevious,
   onClose,
+  onPrint,
+  printingId = "",
   timeZone = "America/La_Paz",
 }) {
   const dialog = useRef(null);
@@ -154,15 +158,32 @@ export default function PaymentLinksHistory({
                     className="border-t border-neutral-800 align-top hover:bg-neutral-900/60"
                   >
                     <td className="px-4 py-3">
-                      <a
-                        href={link.sharePath}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label="Abrir enlace de pago"
-                        className="grid size-8 place-items-center rounded hover:bg-neutral-800"
-                      >
-                        <ExternalLink className="size-4" />
-                      </a>
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={link.sharePath}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label="Abrir enlace de pago"
+                          className="grid size-8 place-items-center rounded hover:bg-neutral-800"
+                        >
+                          <ExternalLink className="size-4" />
+                        </a>
+                        {link.status === "paid" && link.saleId ? (
+                          <button
+                            type="button"
+                            onClick={() => onPrint?.(link)}
+                            disabled={printingId === link.id}
+                            aria-label={`Imprimir recibo ${link.saleNumber}`}
+                            className="grid size-8 place-items-center rounded text-cyan-300 hover:bg-cyan-950 disabled:opacity-50"
+                          >
+                            {printingId === link.id ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Printer className="size-4" />
+                            )}
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap text-neutral-400">
                       {date(link.createdAt, timeZone)}
@@ -176,6 +197,18 @@ export default function PaymentLinksHistory({
                       >
                         {labels[status] || status}
                       </span>
+                      {link.status === "paid" ? (
+                        <p className="mt-1 text-[10px] text-neutral-500">
+                          Recibo:{" "}
+                          {link.receiptPrintStatus === "printed"
+                            ? "impreso"
+                            : link.receiptPrintStatus === "failed"
+                              ? "error, reintentar"
+                              : link.receiptPrintStatus === "processing"
+                                ? "imprimiendo"
+                                : "pendiente"}
+                        </p>
+                      ) : null}
                       {link.lastError ? (
                         <p className="mt-1 max-w-48 text-xs text-amber-300">
                           {link.lastError}

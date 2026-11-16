@@ -9,9 +9,12 @@ import {
   Clipboard,
   ExternalLink,
   Loader2,
+  Printer,
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { printPaymentLinkReceipt } from "@/lib/pos/payment-link-receipt-client";
+import { setActiveReceiptBranchId } from "@/lib/pos/receipt-printing";
 
 function money(value) {
   return new Intl.NumberFormat("es-BO", {
@@ -52,6 +55,8 @@ export default function PaymentLinksClient({
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState("");
+  const [printingId, setPrintingId] = useState("");
+  const [message, setMessage] = useState("");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const requestSequence = useRef(0);
   const [summary, setSummary] = useState({
@@ -163,8 +168,22 @@ export default function PaymentLinksClient({
   }, [branchId, selectedBranchId]);
 
   useEffect(() => {
+    if (selectedBranchId) setActiveReceiptBranchId(selectedBranchId);
+  }, [selectedBranchId]);
+
+  useEffect(() => {
     loadLinks();
   }, [loadLinks, refreshKey]);
+
+  useEffect(() => {
+    const refresh = () => loadLinks();
+    const interval = window.setInterval(refresh, 30_000);
+    window.addEventListener("pos:payment-link-receipt", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("pos:payment-link-receipt", refresh);
+    };
+  }, [loadLinks]);
 
   useEffect(() => {
     if (!isHistoryOpen) return;
@@ -259,6 +278,42 @@ export default function PaymentLinksClient({
     }
   }
 
+  async function printLinkReceipt(link) {
+    setPrintingId(link.id);
+    setError("");
+    setMessage("");
+    try {
+      const { result, receiptState } = await printPaymentLinkReceipt(link.id);
+      const updatedState = receiptState || {
+        receiptPrintStatus: link.receiptPrintStatus || "printed",
+        receiptPrintedAt: link.receiptPrintedAt || "",
+        receiptPrintError: "",
+      };
+      const update = (candidate) =>
+        candidate.id === link.id
+          ? { ...candidate, ...updatedState }
+          : candidate;
+      setLinks((current) => current.map(update));
+      setHistory((current) => ({
+        ...current,
+        links: current.links.map(update),
+      }));
+      setMessage(
+        result.mode === "browser"
+          ? `Recibo ${link.saleNumber} preparado para imprimir.`
+          : `Recibo ${link.saleNumber} enviado a ${result.printerName}.`,
+      );
+    } catch (printError) {
+      setError(
+        printError.message ||
+          "No se pudo imprimir. Revisa QZ Tray y la impresora.",
+      );
+      await loadLinks();
+    } finally {
+      setPrintingId("");
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col">
@@ -327,6 +382,11 @@ export default function PaymentLinksClient({
         {error ? (
           <p className="m-4 rounded-md border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-200">
             {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p className="m-4 rounded-md border border-emerald-900 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-200">
+            {message}
           </p>
         ) : null}
 
@@ -403,6 +463,26 @@ export default function PaymentLinksClient({
                               )}
                             </button>
                           ) : null}
+                          {link.status === "paid" && link.saleId ? (
+                            <button
+                              type="button"
+                              onClick={() => printLinkReceipt(link)}
+                              disabled={printingId === link.id}
+                              className="grid size-7 place-items-center rounded text-cyan-300 hover:bg-cyan-950 disabled:opacity-50"
+                              aria-label={`Imprimir recibo ${link.saleNumber}`}
+                              title={
+                                link.receiptPrintStatus === "failed"
+                                  ? "Reintentar impresión"
+                                  : "Imprimir recibo"
+                              }
+                            >
+                              {printingId === link.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Printer className="size-3.5" />
+                              )}
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-2 text-xs whitespace-nowrap text-neutral-500">
@@ -429,6 +509,26 @@ export default function PaymentLinksClient({
                         >
                           {statusLabel[displayStatus] || displayStatus}
                         </span>
+                        {link.status === "paid" ? (
+                          <p
+                            className={`mt-1 text-[10px] ${
+                              link.receiptPrintStatus === "failed"
+                                ? "text-red-300"
+                                : link.receiptPrintStatus === "printed"
+                                  ? "text-emerald-400"
+                                  : "text-neutral-500"
+                            }`}
+                          >
+                            Recibo:{" "}
+                            {link.receiptPrintStatus === "printed"
+                              ? "impreso"
+                              : link.receiptPrintStatus === "failed"
+                                ? "error, reintentar"
+                                : link.receiptPrintStatus === "processing"
+                                  ? "imprimiendo"
+                                  : "pendiente"}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="max-w-[300px] px-4 py-2 text-xs text-neutral-300">
                         <p className="truncate">
@@ -494,6 +594,8 @@ export default function PaymentLinksClient({
           onNext={nextHistoryPage}
           onPrevious={previousHistoryPage}
           onClose={() => setIsHistoryOpen(false)}
+          onPrint={printLinkReceipt}
+          printingId={printingId}
           timeZone={timeZone}
         />
       ) : null}

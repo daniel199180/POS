@@ -129,6 +129,9 @@ function toPaymentLink(
     saleNumber: document.saleNumber || "",
     paidAt: document.paidAt || "",
     lastError: document.lastError || "",
+    receiptPrintStatus: document.receiptPrintStatus || "",
+    receiptPrintedAt: document.receiptPrintedAt || "",
+    receiptPrintError: document.receiptPrintError || "",
     createdAt: document.$createdAt,
     updatedAt: document.$updatedAt,
   };
@@ -525,9 +528,7 @@ export async function listPaymentLinks(context, input = {}) {
     toPaymentLink(link, { includeToken: true }),
   );
   const nextCursor =
-    pageResult.documents.length > pageSize
-      ? pageDocuments.at(-1).$id
-      : "";
+    pageResult.documents.length > pageSize ? pageDocuments.at(-1).$id : "";
   const [ready, expired, cancelled, pendingConfirmation] = await Promise.all([
     countPaymentLinks(databases, scopeQueries, [
       Query.equal("status", ["open", "qr_pending", "failed"]),
@@ -771,6 +772,9 @@ export async function reconcilePaymentLink(
           senderName: status.senderName || "",
           paidAt: sale.completedAt || sale.$createdAt,
           lastError: "",
+          receiptPrintStatus: "pending",
+          receiptPrintAttempts: 0,
+          receiptPrintError: "",
         },
       });
     }

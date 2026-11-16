@@ -157,6 +157,8 @@ test("a payment arriving at expiry wins; sale is recorded once without another d
   assert.equal(f.stock(), 8);
   assert.equal(f.sales(), 1);
   assert.equal(f.link().status, "paid");
+  assert.equal(f.link().receiptPrintStatus, "pending");
+  assert.equal(f.link().receiptPrintAttempts, 0);
   assert.equal(JSON.parse(f.link().items).inventoryStatus, "consumed");
 });
 test("payment during cancellation is settled instead of restored", async () => {

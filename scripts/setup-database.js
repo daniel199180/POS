@@ -24,6 +24,7 @@ import {
   Client,
   Databases,
   IndexType,
+  Query,
   Storage,
 } from "node-appwrite";
 
@@ -595,6 +596,18 @@ const collections = [
       { type: "string", key: "saleNumber", size: 30, required: false },
       { type: "datetime", key: "paidAt", required: false },
       { type: "string", key: "lastError", size: 500, required: false },
+      {
+        type: "enum",
+        key: "receiptPrintStatus",
+        elements: ["pending", "processing", "printed", "failed"],
+        required: false,
+      },
+      { type: "string", key: "receiptClaimedBy", size: 100, required: false },
+      { type: "datetime", key: "receiptClaimedAt", required: false },
+      { type: "datetime", key: "receiptClaimExpiresAt", required: false },
+      { type: "datetime", key: "receiptPrintedAt", required: false },
+      { type: "integer", key: "receiptPrintAttempts", required: false },
+      { type: "string", key: "receiptPrintError", size: 500, required: false },
     ],
     indexes: [
       { key: "idx_tokenHash", type: "unique", attributes: ["tokenHash"] },
@@ -606,6 +619,23 @@ const collections = [
       { key: "idx_branchId", type: "key", attributes: ["branchId"] },
       { key: "idx_status", type: "key", attributes: ["status"] },
       { key: "idx_expiresAt", type: "key", attributes: ["expiresAt"] },
+      {
+        key: "idx_receipt_queue",
+        type: "key",
+        attributes: ["branchId", "status", "receiptPrintStatus", "paidAt"],
+        orders: ["ASC", "ASC", "ASC", "ASC"],
+      },
+      {
+        key: "idx_receipt_lease",
+        type: "key",
+        attributes: [
+          "branchId",
+          "status",
+          "receiptPrintStatus",
+          "receiptClaimExpiresAt",
+        ],
+        orders: ["ASC", "ASC", "ASC", "ASC"],
+      },
     ],
   },
   {
@@ -964,6 +994,7 @@ async function waitForAttributesAvailable(
     const result = await databases.listAttributes({
       databaseId,
       collectionId,
+      queries: [Query.limit(100)],
     });
 
     const statusByKey = new Map(
