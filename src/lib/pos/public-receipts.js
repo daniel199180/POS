@@ -124,6 +124,7 @@ export async function getPublicReceipt(token, userAgent = "") {
 
   return {
     saleNumber: sale.saleNumber,
+    receiptNumber: sale.receiptNumber || sale.saleNumber,
     companyName: brand.companyName || "",
     branchName: sale.branchName || branch.name,
     branchCode: branch.code || "",

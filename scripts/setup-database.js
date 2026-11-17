@@ -58,6 +58,7 @@ const PRIVATE_COLLECTION_IDS = new Set([
   "branch_payment_credentials",
   "products",
   process.env.COL_SKU_SEQUENCES || "sku_sequences",
+  process.env.COL_RECEIPT_SEQUENCES || "receipt_sequences",
   "stock",
   "stock_movements",
   "inventory_grants",
@@ -338,6 +339,19 @@ const collections = [
     ],
   },
   {
+    id: process.env.COL_RECEIPT_SEQUENCES || "receipt_sequences",
+    name: "Receipt Sequences",
+    attributes: [
+      { type: "string", key: "branchId", size: 36, required: true },
+      { type: "string", key: "prefix", size: 10, required: true },
+      { type: "integer", key: "nextNumber", required: true },
+    ],
+    indexes: [
+      { key: "idx_branchId", type: "unique", attributes: ["branchId"] },
+      { key: "idx_prefix", type: "key", attributes: ["prefix"] },
+    ],
+  },
+  {
     id: "stock",
     name: "Stock",
     attributes: [
@@ -437,6 +451,7 @@ const collections = [
     name: "Sales",
     attributes: [
       { type: "string", key: "saleNumber", size: 30, required: true },
+      { type: "string", key: "receiptNumber", size: 30, required: false },
       { type: "string", key: "branchId", size: 36, required: true },
       { type: "string", key: "branchName", size: 120, required: true },
       { type: "string", key: "cashierId", size: 36, required: true },
@@ -468,6 +483,11 @@ const collections = [
     ],
     indexes: [
       { key: "idx_saleNumber", type: "unique", attributes: ["saleNumber"] },
+      {
+        key: "idx_receiptNumber",
+        type: "unique",
+        attributes: ["receiptNumber"],
+      },
       {
         key: "idx_paymentLinkId",
         type: "unique",

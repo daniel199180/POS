@@ -26,6 +26,7 @@ export const appwriteConfig = {
     categories: process.env.NEXT_PUBLIC_COL_CATEGORIES || "categories",
     products: process.env.NEXT_PUBLIC_COL_PRODUCTS || "products",
     skuSequences: process.env.COL_SKU_SEQUENCES || "sku_sequences",
+    receiptSequences: process.env.COL_RECEIPT_SEQUENCES || "receipt_sequences",
     stock: process.env.NEXT_PUBLIC_COL_STOCK || "stock",
     stockMovements:
       process.env.NEXT_PUBLIC_COL_STOCK_MOVEMENTS || "stock_movements",

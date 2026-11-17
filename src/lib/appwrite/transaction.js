@@ -51,3 +51,30 @@ export async function withTransaction(userAgent, work) {
     throw error;
   }
 }
+
+function isTransactionConflict(error) {
+  return error?.code === 409;
+}
+
+export async function withTransactionRetry(
+  userAgent,
+  work,
+  { maxAttempts = 3 } = {},
+) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await withTransaction(userAgent, work);
+    } catch (error) {
+      lastError = error;
+      if (!isTransactionConflict(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, attempt * 25));
+    }
+  }
+
+  throw lastError;
+}

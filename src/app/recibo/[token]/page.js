@@ -92,9 +92,9 @@ export default async function PublicReceiptPage({ params }) {
         <section className="space-y-5 px-6 py-7 sm:px-9">
           <dl className="grid grid-cols-2 gap-4 rounded-2xl bg-[#f3f6f4] p-4 text-sm">
             <div>
-              <dt className="text-[#657574]">Venta</dt>
+              <dt className="text-[#657574]">Recibo N.º</dt>
               <dd className="mt-1 font-semibold break-all">
-                {receipt.saleNumber}
+                {receipt.receiptNumber}
               </dd>
             </div>
             <div>

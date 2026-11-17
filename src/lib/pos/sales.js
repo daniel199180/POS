@@ -18,6 +18,7 @@ import {
   CATALOG_BRANCH_CODES,
   publicCatalogPath,
 } from "./public-catalog-core.js";
+import { allocateReceiptNumber } from "./receipt-numbers.js";
 import {
   assertPosSaleTabsEnabled,
   assertPosTabEnabled,
@@ -226,6 +227,7 @@ function toSale(document) {
     id: document.$id,
     receiptPath: publicReceiptPath(document.$id),
     saleNumber: document.saleNumber,
+    receiptNumber: document.receiptNumber || document.saleNumber,
     branchId: document.branchId,
     branchName: document.branchName,
     cashierId: document.cashierId,
@@ -945,8 +947,8 @@ export async function getDailyIncomeReport(context, filters = {}) {
 
 export async function createSale(context, input, options = {}) {
   if (!options.databases) {
-    const { withTransaction } = await import("../appwrite/transaction.js");
-    return withTransaction(context.userAgent, (databases) =>
+    const { withTransactionRetry } = await import("../appwrite/transaction.js");
+    return withTransactionRetry(context.userAgent, (databases) =>
       createSale(context, input, { ...options, databases }),
     );
   }
@@ -1110,12 +1112,17 @@ export async function createSale(context, input, options = {}) {
   }
 
   const completedAt = new Date().toISOString();
+  const receiptNumber = await allocateReceiptNumber(databases, {
+    branchId,
+    branchCode: branch.code,
+  });
   const sale = await databases.createDocument({
     databaseId,
     collectionId: collections.sales,
     documentId: ID.unique(),
     data: {
       saleNumber: buildSaleNumber(branch.code),
+      receiptNumber,
       branchId,
       branchName: branch.name,
       cashierId: context.user.id,

@@ -95,6 +95,11 @@ function sanitizeBranchInput(input) {
   if (!name || !code || !city) {
     throw new Error("Nombre, codigo y ciudad son obligatorios.");
   }
+  if (!/^[A-Z0-9-]{1,10}$/.test(code)) {
+    throw inputError(
+      "El código debe usar únicamente letras, números o guiones.",
+    );
+  }
 
   const whatsappNumber = text(input.whatsappNumber).replace(/[^\d]/g, "");
   if (whatsappNumber && !/^\d{8,15}$/.test(whatsappNumber)) {
@@ -507,6 +512,20 @@ export async function updateBranch(context, branchId, input) {
     documentId: branchId,
   });
   const data = sanitizeBranchInput(input);
+  if (data.code !== before.code) {
+    try {
+      await databases.getDocument({
+        databaseId,
+        collectionId: collections.receiptSequences,
+        documentId: branchId,
+      });
+      throw inputError(
+        "El código de la sucursal no se puede cambiar después de emitir recibos.",
+      );
+    } catch (error) {
+      if (error?.code !== 404) throw error;
+    }
+  }
   const branch = await withAudit(
     databases,
     context,

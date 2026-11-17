@@ -1269,6 +1269,8 @@ export default function DashboardClient({
       const completedSale = {
         id: payload.sale.id,
         saleNumber: payload.sale.saleNumber,
+        receiptNumber:
+          payload.sale.receiptNumber || payload.sale.saleNumber,
         branchId: selectedBranchId,
         branchName: selectedBranch?.name || "Punto de venta",
         branchCode: selectedBranch?.code || payload.sale.branchCode || "",

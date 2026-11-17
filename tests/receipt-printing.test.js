@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   buildEscPosReceipt,
@@ -11,6 +12,7 @@ import {
 
 const sale = {
   saleNumber: "V-123",
+  receiptNumber: "SC-000123",
   branchId: "branch-centro",
   branchName: "Sucursal Centro",
   companyName: "Empresa Demo",
@@ -34,6 +36,18 @@ const sale = {
   ],
 };
 
+test("la impresión automática conserva el correlativo devuelto por la venta", () => {
+  const dashboardSource = readFileSync(
+    new URL("../src/app/(dashboard)/dashboard-client.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    dashboardSource,
+    /receiptNumber:\s*payload\.sale\.receiptNumber\s*\|\|\s*payload\.sale\.saleNumber/,
+  );
+});
+
 test("normaliza opciones portables y limita las copias", () => {
   assert.deepEqual(normalizeReceiptPrinterSettings({ copies: 99 }), {
     enabled: false,
@@ -56,7 +70,8 @@ test("genera HTML seguro para papel térmico", () => {
   assert.match(html, /Café &lt;grande&gt;/);
   assert.doesNotMatch(html, /Café <grande>/);
   assert.match(html, /Bs 12\.50/);
-  assert.match(html, /V-123/);
+  assert.match(html, /Recibo N.º:<\/strong> SC-000123/);
+  assert.doesNotMatch(html, /Venta:<\/strong> V-123/);
   assert.match(html, /Empresa Demo/);
   assert.match(html, /Sucursal: Sucursal Centro/);
   assert.match(html, /padding-bottom: 10mm/);
@@ -82,6 +97,7 @@ test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
   assert.match(output, /Cafe <grande>/);
   assert.match(output, /Empresa Demo/);
   assert.match(output, /Sucursal: Sucursal Centro/);
+  assert.match(output, /Recibo Nro: SC-000123/);
   assert.ok(output.indexOf("RECIBO DE PAGO") < output.indexOf("Empresa Demo"));
   assert.equal((output.match(/RECIBO DE PAGO/g) || []).length, 1);
   assert.equal((output.match(/\*\*\* ORIGINAL \*\*\*/g) || []).length, 1);

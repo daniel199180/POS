@@ -270,6 +270,9 @@ function receiptQrStripHtml(sale) {
 function normalizeReceipt(receipt = {}) {
   return {
     saleNumber: String(receipt.saleNumber || receipt.id || "SIN-NUMERO"),
+    receiptNumber: String(
+      receipt.receiptNumber || receipt.saleNumber || receipt.id || "SIN-NUMERO",
+    ),
     branchId: String(receipt.branchId || ""),
     branchName: String(receipt.branchName || "Punto de venta"),
     companyName: String(receipt.companyName || "")
@@ -334,7 +337,7 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
       <p class="copy-label">${escapeHtml(copyLabel)}</p>`
       }
       <div class="rule"></div>
-      <p><strong>Venta:</strong> ${escapeHtml(sale.saleNumber)}</p>
+      <p><strong>Recibo N.º:</strong> ${escapeHtml(sale.receiptNumber)}</p>
       <p><strong>Fecha:</strong> ${escapeHtml(receiptDate(sale.completedAt))}</p>
       <p><strong>Cajero:</strong> ${escapeHtml(sale.cashierName)}</p>
       ${sale.customerName ? `<p><strong>Cliente:</strong> ${escapeHtml(sale.customerName)}</p>` : ""}
@@ -363,7 +366,7 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
 <html lang="es">
   <head>
     <meta charset="utf-8">
-    <title>Recibo ${escapeHtml(sale.saleNumber)}</title>
+    <title>Recibo ${escapeHtml(sale.receiptNumber)}</title>
     <style>
       @page { size: ${width}mm auto; margin: 2mm 2mm 8mm; }
       * { box-sizing: border-box; }
@@ -543,7 +546,7 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
     lines.push(
       "\x1B\x61\x00",
       `${divider}\n`,
-      `Venta: ${ascii(sale.saleNumber)}\n`,
+      `Recibo Nro: ${ascii(sale.receiptNumber)}\n`,
       `Fecha: ${ascii(receiptDate(sale.completedAt))}\n`,
       `Cajero: ${ascii(sale.cashierName)}\n`,
     );
@@ -725,7 +728,7 @@ export async function printReceipt(receipt, settingsValue) {
   const qz = await connectQz();
   const config = qz.configs.create(settings.printerName, {
     copies: settings.copies,
-    jobName: `Recibo ${receipt?.saleNumber || "POS"}`,
+    jobName: `Recibo ${receipt?.receiptNumber || receipt?.saleNumber || "POS"}`,
     margins: 0,
     scaleContent: false,
   });

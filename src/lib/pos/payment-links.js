@@ -15,7 +15,10 @@ import {
 } from "./baneco-qr.js";
 import { decryptCredentials, encryptCredentials } from "./payments.js";
 import { createSale } from "./sales.js";
-import { withTransaction } from "../appwrite/transaction.js";
+import {
+  withTransaction,
+  withTransactionRetry,
+} from "../appwrite/transaction.js";
 import { getLogoImage } from "./settings.js";
 import { PAYMENT_VALIDITY_MS } from "./payment-validity.js";
 import {
@@ -595,7 +598,7 @@ export async function getPaymentLinkLogo(rawToken, userAgent) {
 }
 
 async function linkTransaction(linkId, userAgent, work) {
-  return withTransaction(userAgent, async (databases) => {
+  return withTransactionRetry(userAgent, async (databases) => {
     // Staging the link first makes concurrent generation, payment and expiry
     // conflict at commit instead of applying inventory operations twice.
     const link = await databases.updateDocument({

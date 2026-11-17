@@ -2,8 +2,10 @@ import crypto from "node:crypto";
 import { ID, Query } from "node-appwrite";
 import { appwriteConfig } from "../appwrite/config.js";
 import { createAdminClient } from "../appwrite/admin.js";
+import { withTransactionRetry } from "../appwrite/transaction.js";
 import { assertPosTabEnabled } from "./pos-ui-settings.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
+import { allocateReceiptNumber } from "./receipt-numbers.js";
 import { getTimeZoneSettings } from "./settings.js";
 import {
   DEFAULT_TIME_ZONE,
@@ -284,7 +286,7 @@ function staticSaleNumber(paymentId) {
 }
 
 async function registerPaymentIncome(
-  databases,
+  _databases,
   staticQr,
   payment,
   context = {},
@@ -292,77 +294,124 @@ async function registerPaymentIncome(
   if (payment.saleId) return payment.saleId;
 
   const saleId = staticSaleId(payment.id);
-  const cashierId = text(context.user?.id) || staticQr.createdByUserId;
-  const cashierName = text(
-    context.profile?.name || context.user?.name || context.user?.email,
-    staticQr.createdByName,
-  ).slice(0, 120);
-  const saleData = {
-    saleNumber: staticSaleNumber(payment.id),
-    branchId: staticQr.branchId,
-    branchName: staticQr.branchName,
-    cashierId,
-    cashierName,
-    status: "completed",
-    subtotal: payment.amount,
-    discount: 0,
-    total: payment.amount,
-    paymentMethodId: staticQr.paymentMethodId,
-    paymentMethodType: "qr",
-    paymentMethodLabel: `QR estático · ${staticQr.description}`.slice(0, 80),
-    amountPaid: payment.amount,
-    change: 0,
-    senderName: payment.senderName.slice(0, 160),
-    notes:
-      `QR estático: ${staticQr.description} | Ref: ${payment.providerPaymentId}`.slice(
-        0,
-        300,
-      ),
-    completedAt: payment.paidAt || new Date().toISOString(),
-  };
-
-  try {
-    await databases.createDocument({
+  return withTransactionRetry(context.userAgent, async (databases) => {
+    const currentPayment = await databases.getDocument({
       databaseId,
-      collectionId: collections.sales,
-      documentId: saleId,
-      permissions: [],
-      data: saleData,
+      collectionId: collections.staticQrPayments,
+      documentId: payment.id,
     });
-  } catch (error) {
-    if (error?.code !== 409) throw error;
-  }
+    if (currentPayment.saleId) return currentPayment.saleId;
 
-  const itemId = staticSaleId(payment.id);
-  try {
-    await databases.createDocument({
+    let existingSale = null;
+    try {
+      existingSale = await databases.getDocument({
+        databaseId,
+        collectionId: collections.sales,
+        documentId: saleId,
+      });
+    } catch (error) {
+      if (error?.code !== 404) throw error;
+    }
+
+    let receiptNumber = existingSale?.receiptNumber || "";
+    if (!receiptNumber) {
+      const branch = await databases.getDocument({
+        databaseId,
+        collectionId: collections.branches,
+        documentId: staticQr.branchId,
+      });
+      receiptNumber = await allocateReceiptNumber(databases, {
+        branchId: staticQr.branchId,
+        branchCode: branch.code,
+      });
+    }
+    const cashierId = text(context.user?.id) || staticQr.createdByUserId;
+    const cashierName = text(
+      context.profile?.name || context.user?.name || context.user?.email,
+      staticQr.createdByName,
+    ).slice(0, 120);
+    const saleData = {
+      saleNumber: staticSaleNumber(payment.id),
+      receiptNumber,
+      branchId: staticQr.branchId,
+      branchName: staticQr.branchName,
+      cashierId,
+      cashierName,
+      status: "completed",
+      subtotal: payment.amount,
+      discount: 0,
+      total: payment.amount,
+      paymentMethodId: staticQr.paymentMethodId,
+      paymentMethodType: "qr",
+      paymentMethodLabel: `QR estático · ${staticQr.description}`.slice(0, 80),
+      amountPaid: payment.amount,
+      change: 0,
+      senderName: payment.senderName.slice(0, 160),
+      notes:
+        `QR estático: ${staticQr.description} | Ref: ${payment.providerPaymentId}`.slice(
+          0,
+          300,
+        ),
+      completedAt: payment.paidAt || new Date().toISOString(),
+    };
+
+    if (existingSale) {
+      if (!existingSale.receiptNumber) {
+        await databases.updateDocument({
+          databaseId,
+          collectionId: collections.sales,
+          documentId: saleId,
+          data: { receiptNumber },
+        });
+      }
+    } else {
+      await databases.createDocument({
+        databaseId,
+        collectionId: collections.sales,
+        documentId: saleId,
+        permissions: [],
+        data: saleData,
+      });
+    }
+
+    let existingItem = null;
+    try {
+      existingItem = await databases.getDocument({
+        databaseId,
+        collectionId: collections.saleItems,
+        documentId: staticSaleId(payment.id),
+      });
+    } catch (error) {
+      if (error?.code !== 404) throw error;
+    }
+    if (!existingItem) {
+      await databases.createDocument({
+        databaseId,
+        collectionId: collections.saleItems,
+        documentId: staticSaleId(payment.id),
+        permissions: [],
+        data: {
+          saleId,
+          productId: `custom-${payment.id}`.slice(0, 36),
+          productName: `QR estático: ${staticQr.description}`.slice(0, 200),
+          productSku: "CUSTOM",
+          quantity: 1,
+          unitPrice: payment.amount,
+          discount: 0,
+          subtotal: payment.amount,
+        },
+      });
+    }
+
+    await databases.updateDocument({
       databaseId,
-      collectionId: collections.saleItems,
-      documentId: itemId,
-      permissions: [],
-      data: {
-        saleId,
-        productId: `custom-${payment.id}`.slice(0, 36),
-        productName: `QR estático: ${staticQr.description}`.slice(0, 200),
-        productSku: "CUSTOM",
-        quantity: 1,
-        unitPrice: payment.amount,
-        discount: 0,
-        subtotal: payment.amount,
-      },
+      collectionId: collections.staticQrPayments,
+      documentId: payment.id,
+      data: { saleId },
     });
-  } catch (error) {
-    if (error?.code !== 409) throw error;
-  }
 
-  await databases.updateDocument({
-    databaseId,
-    collectionId: collections.staticQrPayments,
-    documentId: payment.id,
-    data: { saleId },
+    return saleId;
   });
-
-  return saleId;
 }
 
 async function persistStatus(
