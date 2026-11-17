@@ -139,6 +139,10 @@ function formatReportDate(value = "") {
 }
 
 function formatClock(value, timeZone = "America/La_Paz") {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    return "--:--:--";
+  }
+
   try {
     return new Intl.DateTimeFormat("es-BO", {
       timeZone,
@@ -284,7 +288,7 @@ export default function DashboardClient({
   const customerDisplaySnapshotRef = useRef(null);
   const paymentSuccessAudioRef = useRef(null);
   const [displaySessionId, setDisplaySessionId] = useState("");
-  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [currentTime, setCurrentTime] = useState(null);
   const [selectedBranchId, setSelectedBranchId] = useState(
     catalog.branches[0]?.id || "",
   );
@@ -343,9 +347,11 @@ export default function DashboardClient({
   const clockLabel = formatClock(currentTime, timeZone);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
+    const updateClock = () => {
       setCurrentTime(new Date());
-    }, 1000);
+    };
+    updateClock();
+    const intervalId = window.setInterval(updateClock, 1000);
 
     return () => window.clearInterval(intervalId);
   }, []);
