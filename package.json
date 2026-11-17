@@ -31,6 +31,7 @@
     "next": "^16.4.5",
     "node-appwrite": "^18.0.0",
     "postcss": "^8.5.28",
+    "qrcode": "^1.5.4",
     "qz-tray": "^2.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

@@ -3,6 +3,10 @@ import { createAdminClient } from "../appwrite/admin.js";
 import { appwriteConfig } from "../appwrite/config.js";
 import { ForbiddenError, canAccessBranch } from "./auth-core.js";
 import { PAYMENT_VALIDITY_DAYS } from "./payment-validity.js";
+import {
+  CATALOG_BRANCH_CODES,
+  publicCatalogPath,
+} from "./public-catalog-core.js";
 
 const { databaseId, collections } = appwriteConfig;
 export const PRODUCT_PAGE_SIZE = 20;
@@ -40,11 +44,14 @@ function getPaymentConfig(type, value) {
 }
 
 function toBranch(document) {
+  const code = document.code;
   return {
     id: document.$id,
     name: document.name,
-    code: document.code,
+    code,
     city: document.city,
+    whatsappNumber: document.whatsappNumber || "",
+    catalogPath: CATALOG_BRANCH_CODES.has(code) ? publicCatalogPath(code) : "",
     isActive: document.isActive,
   };
 }

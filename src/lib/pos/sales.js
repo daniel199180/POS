@@ -13,6 +13,11 @@ import {
   normalizeUserRole,
 } from "./auth-core.js";
 import { getSaleOrigin, saleItemCategory } from "./sale-origin.js";
+import { publicReceiptPath } from "./public-receipts.js";
+import {
+  CATALOG_BRANCH_CODES,
+  publicCatalogPath,
+} from "./public-catalog-core.js";
 import {
   assertPosSaleTabsEnabled,
   assertPosTabEnabled,
@@ -171,11 +176,14 @@ function clampPageSize(value) {
 }
 
 function toBranch(document) {
+  const code = document.code;
   return {
     id: document.$id,
     name: document.name,
-    code: document.code,
+    code,
     city: document.city,
+    whatsappNumber: document.whatsappNumber || "",
+    catalogPath: CATALOG_BRANCH_CODES.has(code) ? publicCatalogPath(code) : "",
     isActive: document.isActive,
   };
 }
@@ -216,6 +224,7 @@ function toSale(document) {
 
   return {
     id: document.$id,
+    receiptPath: publicReceiptPath(document.$id),
     saleNumber: document.saleNumber,
     branchId: document.branchId,
     branchName: document.branchName,
@@ -313,9 +322,21 @@ export async function getSaleReceipt(context, saleId) {
     throw new ForbiddenError("No tienes acceso al recibo de esta sucursal.");
   }
 
-  const itemsBySaleId = await fetchSaleItemsBySaleIds(databases, [sale.id]);
+  const [itemsBySaleId, branch] = await Promise.all([
+    fetchSaleItemsBySaleIds(databases, [sale.id]),
+    databases.getDocument({
+      databaseId,
+      collectionId: collections.branches,
+      documentId: sale.branchId,
+    }),
+  ]);
   return {
     ...sale,
+    branchCode: branch.code || "",
+    whatsappNumber: branch.whatsappNumber || "",
+    catalogPath: CATALOG_BRANCH_CODES.has(branch.code)
+      ? publicCatalogPath(branch.code)
+      : "",
     items: itemsBySaleId.get(sale.id) || [],
     origin: getSaleOrigin(sale, itemsBySaleId.get(sale.id) || []),
   };
@@ -1171,7 +1192,14 @@ export async function createSale(context, input, options = {}) {
     });
   }
 
-  return toSale(sale);
+  return {
+    ...toSale(sale),
+    branchCode: branch.code || "",
+    whatsappNumber: branch.whatsappNumber || "",
+    catalogPath: CATALOG_BRANCH_CODES.has(branch.code)
+      ? publicCatalogPath(branch.code)
+      : "",
+  };
 }
 
 export async function cancelSale(context, saleId, input = {}) {

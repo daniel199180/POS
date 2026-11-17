@@ -1,3 +1,5 @@
+import QRCode from "qrcode";
+
 export const RECEIPT_PRINTER_STORAGE_KEY = "pos.receipt-printers.v2";
 export const LEGACY_RECEIPT_PRINTER_STORAGE_KEY = "pos.receipt-printer.v1";
 export const RECEIPT_WORKSTATION_STORAGE_KEY = "pos.receipt-workstation.v1";
@@ -178,6 +180,93 @@ function receiptDate(value) {
   }).format(date);
 }
 
+function absoluteReceiptUrl(value) {
+  const safeValue = String(value || "").trim();
+  if (!safeValue) return "";
+  if (/^https:\/\//i.test(safeValue)) return safeValue;
+  if (/^http:\/\/localhost(?::\d+)?(?:\/|$)/i.test(safeValue)) return safeValue;
+  if (!safeValue.startsWith("/") || typeof window === "undefined") return "";
+  return new URL(safeValue, window.location.origin).toString();
+}
+
+export function getReceiptQrLinks(receipt = {}) {
+  const links = [];
+  const receiptUrl = absoluteReceiptUrl(
+    receipt.receiptUrl || receipt.receiptPath,
+  );
+  const whatsappNumber = String(receipt.whatsappNumber || "").replace(
+    /[^\d]/g,
+    "",
+  );
+
+  if (receiptUrl) links.push({ label: "Ver recibo", url: receiptUrl });
+  if (/^\d{8,15}$/.test(whatsappNumber)) {
+    links.push({
+      label: "Chat WhatsApp",
+      url: `https://wa.me/${whatsappNumber}`,
+    });
+  }
+  const catalogUrl = absoluteReceiptUrl(
+    receipt.catalogUrl || receipt.catalogPath,
+  );
+  if (catalogUrl) {
+    links.push({ label: "Ver catálogo online", url: catalogUrl });
+  }
+
+  return links;
+}
+
+function receiptQrMatrices(links) {
+  const version = Math.max(
+    ...links.map((link) =>
+      Math.round(
+        (QRCode.create(link.url, { errorCorrectionLevel: "M" }).modules.size -
+          17) /
+          4,
+      ),
+    ),
+  );
+
+  return links.map(
+    (link) =>
+      QRCode.create(link.url, {
+        errorCorrectionLevel: "M",
+        version,
+      }).modules,
+  );
+}
+
+function qrCodeSvg(matrix) {
+  const quiet = 3;
+  const viewSize = matrix.size + quiet * 2;
+  let path = "";
+
+  for (let row = 0; row < matrix.size; row += 1) {
+    for (let column = 0; column < matrix.size; column += 1) {
+      if (matrix.get(row, column)) {
+        path += `M${column + quiet} ${row + quiet}h1v1h-1z`;
+      }
+    }
+  }
+
+  return `<svg viewBox="0 0 ${viewSize} ${viewSize}" role="img" aria-label="Código QR"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
+}
+
+function receiptQrStripHtml(sale) {
+  if (!sale.qrLinks.length) return "";
+  const matrices = receiptQrMatrices(sale.qrLinks);
+  return `<div class="receipt-qrs" aria-label="Enlaces del recibo">
+    ${sale.qrLinks
+      .map(
+        (link, index) => `<div class="receipt-qr">
+          ${qrCodeSvg(matrices[index])}
+          <strong>${escapeHtml(link.label)}</strong>
+        </div>`,
+      )
+      .join("")}
+  </div>`;
+}
+
 function normalizeReceipt(receipt = {}) {
   return {
     saleNumber: String(receipt.saleNumber || receipt.id || "SIN-NUMERO"),
@@ -186,6 +275,9 @@ function normalizeReceipt(receipt = {}) {
     companyName: String(receipt.companyName || "")
       .trim()
       .slice(0, 100),
+    branchCode: String(receipt.branchCode || ""),
+    whatsappNumber: String(receipt.whatsappNumber || ""),
+    qrLinks: getReceiptQrLinks(receipt),
     cashierName: String(receipt.cashierName || "-"),
     customerName: String(receipt.senderName || receipt.customerName || ""),
     completedAt: receipt.completedAt || new Date().toISOString(),
@@ -231,12 +323,16 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
         </tr>`,
     )
     .join("");
-  const receiptBody = (copyLabel) => `
+  const receiptBody = (copyLabel, showQrLinks = false) => `
     <section class="receipt">
-      <h1>${escapeHtml(sale.companyName || sale.branchName)}</h1>
+      ${
+        copyLabel === "COPIA"
+          ? '<p class="copy-label compact-copy-label">COPIA</p>'
+          : `<h1>${escapeHtml(sale.companyName || sale.branchName)}</h1>
       ${sale.companyName ? `<p class="center"><strong>Sucursal: ${escapeHtml(sale.branchName)}</strong></p>` : ""}
       <p class="center">RECIBO DE PAGO</p>
-      <p class="copy-label">${escapeHtml(copyLabel)}</p>
+      <p class="copy-label">${escapeHtml(copyLabel)}</p>`
+      }
       <div class="rule"></div>
       <p><strong>Venta:</strong> ${escapeHtml(sale.saleNumber)}</p>
       <p><strong>Fecha:</strong> ${escapeHtml(receiptDate(sale.completedAt))}</p>
@@ -256,10 +352,11 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
         ${sale.change ? `<tr><td>Cambio</td><td>${escapeHtml(amount(sale.change))}</td></tr>` : ""}
       </table>
       <div class="rule"></div>
-      <p><strong>Pago:</strong> ${escapeHtml(sale.paymentLabel)}</p>
+      <p><strong>Forma de pago:</strong> ${escapeHtml(sale.paymentLabel)}</p>
       ${sale.notes ? `<p><strong>Notas:</strong> ${escapeHtml(sale.notes)}</p>` : ""}
-      <p class="footer"><strong>Este recibo no tiene valor legal.</strong></p>
-      ${settings.footer ? `<p class="footer">${escapeHtml(settings.footer)}</p>` : ""}
+      ${showQrLinks ? receiptQrStripHtml(sale) : ""}
+      ${copyLabel === "ORIGINAL" ? '<p class="footer"><strong>Este recibo no tiene valor legal.</strong></p>' : ""}
+      ${copyLabel === "ORIGINAL" && settings.footer ? `<p class="footer">${escapeHtml(settings.footer)}</p>` : ""}
     </section>`;
 
   return `<!doctype html>
@@ -287,11 +384,16 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
       .total { border-top: 1px solid #000; font-size: 14px; font-weight: 700; }
       .footer { margin: 10px 0 4mm; text-align: center; white-space: pre-wrap; }
       .copy-label { margin: 5px 0 0; text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .12em; }
+      .receipt-qrs { display: flex; align-items: flex-start; justify-content: center; gap: 1mm; margin: 3mm 0 1mm; break-inside: avoid; }
+      .receipt-qr { min-width: 0; flex: 1 1 0; text-align: center; font-size: 7px; line-height: 1.05; }
+      .receipt-qr svg { display: block; width: 100%; max-width: ${settings.paperWidth === "58" ? "16mm" : "22mm"}; height: auto; margin: 0 auto .2mm; }
+      .receipt-qr strong { display: block; overflow-wrap: anywhere; }
+      .compact-copy-label { margin: 0 0 2px; }
       .receipt + .receipt { margin-top: 8mm; padding-top: 5mm; border-top: 2px dashed #000; }
     </style>
   </head>
   <body>
-    ${receiptBody("ORIGINAL")}
+    ${receiptBody("ORIGINAL", true)}
     ${receiptBody("COPIA")}
   </body>
 </html>`;
@@ -344,6 +446,75 @@ function twoColumns(left, right, width) {
     .join("\n");
 }
 
+function qrRasterCommand(links, paperWidth) {
+  if (!links.length) return "";
+  const width = paperWidth === "58" ? 384 : 576;
+  const bytesPerRow = Math.ceil(width / 8);
+  const cellWidth = Math.floor(width / links.length);
+  const matrices = receiptQrMatrices(links);
+  const quietModules = 3;
+  const scales = matrices.map((matrix) =>
+    Math.max(1, Math.floor((cellWidth - 8) / (matrix.size + quietModules * 2))),
+  );
+  const sizes = matrices.map(
+    (matrix, index) => (matrix.size + quietModules * 2) * scales[index],
+  );
+  const height = Math.max(...sizes);
+  const raster = new Uint8Array(bytesPerRow * height);
+
+  matrices.forEach((matrix, index) => {
+    const scale = scales[index];
+    const qrSize = sizes[index];
+    const startX = index * cellWidth + Math.floor((cellWidth - qrSize) / 2);
+    const startY = Math.floor((height - qrSize) / 2) + quietModules * scale;
+    const modulesStartX = startX + quietModules * scale;
+
+    for (let row = 0; row < matrix.size; row += 1) {
+      for (let column = 0; column < matrix.size; column += 1) {
+        if (!matrix.get(row, column)) continue;
+        for (let dy = 0; dy < scale; dy += 1) {
+          const y = startY + row * scale + dy;
+          for (let dx = 0; dx < scale; dx += 1) {
+            const x = modulesStartX + column * scale + dx;
+            raster[y * bytesPerRow + Math.floor(x / 8)] |= 0x80 >> x % 8;
+          }
+        }
+      }
+    }
+  });
+
+  let binary = "";
+  for (let offset = 0; offset < raster.length; offset += 4096) {
+    binary += String.fromCharCode(...raster.subarray(offset, offset + 4096));
+  }
+  const xLow = bytesPerRow & 0xff;
+  const xHigh = (bytesPerRow >> 8) & 0xff;
+  const yLow = height & 0xff;
+  const yHigh = (height >> 8) & 0xff;
+  return `\x1D\x76\x30\x00${String.fromCharCode(xLow, xHigh, yLow, yHigh)}${binary}`;
+}
+
+function qrLabelsLines(links, columns) {
+  const cellWidth = Math.floor(columns / links.length);
+  const labels = links.map((link) => wrap(link.label, cellWidth));
+  const lineCount = Math.max(...labels.map((lines) => lines.length));
+
+  return Array.from({ length: lineCount }, (_, lineIndex) =>
+    labels
+      .map((lines, index) => {
+        const label = lines[lineIndex] || "";
+        const left = Math.floor((cellWidth - label.length) / 2);
+        const right = cellWidth - label.length - left;
+        const cell = `${" ".repeat(left)}${label}${" ".repeat(right)}`;
+        return index === links.length - 1
+          ? cell.padEnd(columns - cellWidth * index)
+          : cell;
+      })
+      .join("")
+      .slice(0, columns),
+  );
+}
+
 export function buildEscPosReceipt(receipt, settingsValue = {}) {
   const settings = normalizeReceiptPrinterSettings({
     ...settingsValue,
@@ -353,24 +524,29 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
   const sale = normalizeReceipt(receipt);
   const columns = settings.paperWidth === "58" ? 32 : 48;
   const divider = "-".repeat(columns);
-  const copyLines = (copyLabel, leadingBlank = false) => {
-    const lines = [
-      "\x1B\x61\x01",
-      ...(leadingBlank ? ["\n"] : []),
-      "RECIBO DE PAGO\n",
-      "\x1B\x45\x01",
-      `${ascii(sale.companyName || sale.branchName)}\n`,
-      "\x1B\x45\x00",
-      ...(sale.companyName ? [`Sucursal: ${ascii(sale.branchName)}\n`] : []),
-      "\x1B\x45\x01",
-      `*** ${ascii(copyLabel)} ***\n`,
-      "\x1B\x45\x00",
+  const copyLines = (copyLabel, leadingBlank = false, showQrLinks = false) => {
+    const lines = ["\x1B\x61\x01", ...(leadingBlank ? ["\n"] : [])];
+    if (copyLabel === "COPIA") {
+      lines.push("\x1B\x45\x01", "*** COPIA ***\n", "\x1B\x45\x00");
+    } else {
+      lines.push(
+        "RECIBO DE PAGO\n",
+        "\x1B\x45\x01",
+        `${ascii(sale.companyName || sale.branchName)}\n`,
+        "\x1B\x45\x00",
+        ...(sale.companyName ? [`Sucursal: ${ascii(sale.branchName)}\n`] : []),
+        "\x1B\x45\x01",
+        `*** ${ascii(copyLabel)} ***\n`,
+        "\x1B\x45\x00",
+      );
+    }
+    lines.push(
       "\x1B\x61\x00",
       `${divider}\n`,
       `Venta: ${ascii(sale.saleNumber)}\n`,
       `Fecha: ${ascii(receiptDate(sale.completedAt))}\n`,
       `Cajero: ${ascii(sale.cashierName)}\n`,
-    ];
+    );
 
     if (sale.customerName) lines.push(`Cliente: ${ascii(sale.customerName)}\n`);
     lines.push(`${divider}\n`);
@@ -402,14 +578,25 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
     if (sale.change) {
       lines.push(`${twoColumns("Cambio", amount(sale.change), columns)}\n`);
     }
-    lines.push(`${divider}\n`, `Pago: ${ascii(sale.paymentLabel)}\n`);
+    lines.push(`${divider}\n`, `Forma de pago: ${ascii(sale.paymentLabel)}\n`);
     if (sale.notes) lines.push(`Notas: ${ascii(sale.notes)}\n`);
-    lines.push(
-      "\x1B\x61\x01",
-      "Este recibo no tiene valor legal.\n",
-      "\x1B\x61\x00",
-    );
-    if (settings.footer) {
+    if (showQrLinks && sale.qrLinks.length) {
+      lines.push(
+        "\n",
+        "\x1B\x61\x01",
+        qrRasterCommand(sale.qrLinks, settings.paperWidth),
+        `${qrLabelsLines(sale.qrLinks, columns).join("\n")}\n`,
+        "\x1B\x61\x00",
+      );
+    }
+    if (copyLabel === "ORIGINAL") {
+      lines.push(
+        "\x1B\x61\x01",
+        "Este recibo no tiene valor legal.\n",
+        "\x1B\x61\x00",
+      );
+    }
+    if (copyLabel === "ORIGINAL" && settings.footer) {
       lines.push(
         "\x1B\x61\x01",
         `${wrap(settings.footer, columns).join("\n")}\n`,
@@ -421,7 +608,7 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
 
   const lines = [
     "\x1B\x40",
-    ...copyLines("ORIGINAL", true),
+    ...copyLines("ORIGINAL", true, true),
     ...(settings.cutPaper
       ? ["\n", "\x1B\x64\x05", "\x1D\x56\x00", "\x1B\x40", "\n"]
       : ["\n\n", "\x1B\x61\x01", `${divider}\n`, "\x1B\x61\x00", "\n"]),
@@ -505,6 +692,13 @@ function printInBrowser(receipt, settings) {
   }, 50);
 }
 
+function rawCommandBase64(command) {
+  if (typeof window === "undefined" || typeof window.btoa !== "function") {
+    throw new Error("El navegador no pudo codificar el recibo térmico.");
+  }
+  return window.btoa(command);
+}
+
 export async function printReceipt(receipt, settingsValue) {
   const branchId = normalizeBranchId(receipt?.branchId);
   const settings = normalizeReceiptPrinterSettings(
@@ -541,8 +735,8 @@ export async function printReceipt(receipt, settingsValue) {
       {
         type: "raw",
         format: "command",
-        flavor: "plain",
-        data: buildEscPosReceipt(receipt, settings),
+        flavor: "base64",
+        data: rawCommandBase64(buildEscPosReceipt(receipt, settings)),
       },
     ]);
   } else {

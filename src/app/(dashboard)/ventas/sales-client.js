@@ -260,7 +260,16 @@ export default function SalesClient({
     setError("");
 
     try {
-      const result = await printReceipt({ ...sale, companyName });
+      const branch = options.branches.find(
+        (option) => option.id === sale.branchId,
+      );
+      const result = await printReceipt({
+        ...sale,
+        companyName,
+        branchCode: branch?.code || "",
+        whatsappNumber: branch?.whatsappNumber || "",
+        catalogPath: branch?.catalogPath || "",
+      });
       setMessage(
         result.mode === "browser"
           ? "Recibo preparado en el diálogo de impresión."

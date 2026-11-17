@@ -370,7 +370,7 @@ export default function BranchesManagerClient({ initialBranches, canManage }) {
           </label>
 
           <label className="text-xs font-medium text-neutral-400">
-            WhatsApp del catálogo (con código de país)
+            WhatsApp de la sucursal para catálogo y recibos (con código de país)
             <input
               value={form.whatsappNumber}
               onChange={(event) =>

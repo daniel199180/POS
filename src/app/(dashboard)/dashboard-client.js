@@ -1265,6 +1265,12 @@ export default function DashboardClient({
         saleNumber: payload.sale.saleNumber,
         branchId: selectedBranchId,
         branchName: selectedBranch?.name || "Punto de venta",
+        branchCode: selectedBranch?.code || payload.sale.branchCode || "",
+        whatsappNumber:
+          selectedBranch?.whatsappNumber || payload.sale.whatsappNumber || "",
+        receiptPath: payload.sale.receiptPath || "",
+        catalogPath:
+          selectedBranch?.catalogPath || payload.sale.catalogPath || "",
         companyName: settings.companyName || "",
         cashierName: user.name || user.email,
         subtotal: totals.subtotal,

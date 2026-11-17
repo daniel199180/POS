@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildEscPosReceipt,
   buildReceiptHtml,
+  getReceiptQrLinks,
   getReceiptPrinterSettings,
   normalizeReceiptPrinterSettings,
   saveReceiptPrinterSettings,
@@ -60,7 +61,7 @@ test("genera HTML seguro para papel térmico", () => {
   assert.match(html, /Sucursal: Sucursal Centro/);
   assert.match(html, /padding-bottom: 10mm/);
   assert.equal((html.match(/class="receipt"/g) || []).length, 2);
-  assert.equal((html.match(/RECIBO DE PAGO/g) || []).length, 2);
+  assert.equal((html.match(/RECIBO DE PAGO/g) || []).length, 1);
   assert.match(html, />ORIGINAL</);
   assert.match(html, />COPIA</);
   assert.match(html, /receipt \+ \.receipt/);
@@ -82,7 +83,7 @@ test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
   assert.match(output, /Empresa Demo/);
   assert.match(output, /Sucursal: Sucursal Centro/);
   assert.ok(output.indexOf("RECIBO DE PAGO") < output.indexOf("Empresa Demo"));
-  assert.equal((output.match(/RECIBO DE PAGO/g) || []).length, 2);
+  assert.equal((output.match(/RECIBO DE PAGO/g) || []).length, 1);
   assert.equal((output.match(/\*\*\* ORIGINAL \*\*\*/g) || []).length, 1);
   assert.equal((output.match(/\*\*\* COPIA \*\*\*/g) || []).length, 1);
   assert.equal((output.match(/\x1D\x56\x00/g) || []).length, 2);
@@ -91,6 +92,55 @@ test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
   );
   assert.ok(output.indexOf("\x1D\x56\x00") < output.indexOf("*** COPIA ***"));
   assert.match(output, /TOTAL/);
+});
+
+test("imprime los tres QR juntos únicamente en el recibo original", () => {
+  const receiptWithQr = {
+    ...sale,
+    receiptUrl: "https://pos.example/recibo/token-seguro",
+    whatsappNumber: "59170000000",
+    branchCode: "SCZ",
+    catalogUrl: "https://pos.example/catalogo/SCZ",
+  };
+  const links = getReceiptQrLinks(receiptWithQr);
+  assert.deepEqual(
+    links.map((link) => link.label),
+    ["Ver recibo", "Chat WhatsApp", "Ver catálogo online"],
+  );
+
+  const html = buildReceiptHtml(receiptWithQr, { paperWidth: "80" });
+  assert.equal((html.match(/class="receipt-qrs"/g) || []).length, 1);
+  assert.equal((html.match(/aria-label="Código QR"/g) || []).length, 3);
+  assert.match(html, /Ver recibo/);
+  assert.match(html, /Chat WhatsApp/);
+  assert.match(html, /Ver catálogo online/);
+  const viewBoxes = [...html.matchAll(/viewBox="([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(new Set(viewBoxes).size, 1);
+  assert.equal(
+    (html.match(/Este recibo no tiene valor legal/g) || []).length,
+    1,
+  );
+  assert.equal((html.match(/Gracias por su compra/g) || []).length, 1);
+  assert.equal((html.match(/Empresa Demo/g) || []).length, 1);
+  assert.ok(html.indexOf("receipt-qrs") < html.indexOf(">COPIA<"));
+
+  const escPos = buildEscPosReceipt(receiptWithQr, {
+    mode: "qz",
+    escPos: true,
+    paperWidth: "80",
+  });
+  assert.equal((escPos.match(/\x1D\x76\x30\x00/g) || []).length, 1);
+  assert.equal((escPos.match(/WhatsApp/g) || []).length, 1);
+  assert.match(escPos, /catalogo/);
+  assert.match(escPos, /online/);
+  assert.ok(escPos.indexOf("WhatsApp") < escPos.indexOf("*** COPIA ***"));
+  assert.equal(
+    (escPos.match(/Este recibo no tiene valor legal/g) || []).length,
+    1,
+  );
+  assert.equal((escPos.match(/Gracias por su compra/g) || []).length, 1);
 });
 
 test("mantiene original y copia unidos cuando el corte está desactivado", () => {
