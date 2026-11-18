@@ -7,6 +7,7 @@ import {
   getReceiptQrLinks,
   getReceiptPrinterSettings,
   normalizeReceiptPrinterSettings,
+  printReceipt,
   saveReceiptPrinterSettings,
 } from "../src/lib/pos/receipt-printing.js";
 
@@ -98,7 +99,10 @@ test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
   assert.match(output, /Empresa Demo/);
   assert.match(output, /Sucursal: Sucursal Centro/);
   assert.match(output, /Recibo Nro: SC-000123/);
-  assert.ok(output.indexOf("RECIBO DE PAGO") < output.indexOf("Empresa Demo"));
+  assert.ok(output.includes("\x1B\x40\x1B\x64\x01"));
+  assert.ok(output.indexOf("Empresa Demo") < output.indexOf("Sucursal:"));
+  assert.ok(output.indexOf("Sucursal:") < output.indexOf("RECIBO DE PAGO"));
+  assert.ok(output.indexOf("RECIBO DE PAGO") < output.indexOf("*** ORIGINAL ***"));
   assert.equal((output.match(/RECIBO DE PAGO/g) || []).length, 1);
   assert.equal((output.match(/\*\*\* ORIGINAL \*\*\*/g) || []).length, 1);
   assert.equal((output.match(/\*\*\* COPIA \*\*\*/g) || []).length, 1);
@@ -108,6 +112,48 @@ test("genera comandos ESC\/POS opcionales para cajón y corte", () => {
   );
   assert.ok(output.indexOf("\x1D\x56\x00") < output.indexOf("*** COPIA ***"));
   assert.match(output, /TOTAL/);
+});
+
+test("mantiene el mismo encabezado en todas las sucursales y anchos", () => {
+  const branches = [
+    ["CBB", "Cochabamba"],
+    ["SCZ", "Santa Cruz"],
+    ["LPZ", "La Paz"],
+    ["ONN", "Online"],
+  ];
+
+  for (const [code, branchName] of branches) {
+    for (const paperWidth of ["58", "80"]) {
+      const receipt = {
+        ...sale,
+        receiptNumber: `${code}-000001`,
+        branchName,
+      };
+      const html = buildReceiptHtml(receipt, { paperWidth });
+      const escPos = buildEscPosReceipt(receipt, { paperWidth });
+      const htmlHeader = [
+        html.indexOf("Empresa Demo"),
+        html.indexOf(`Sucursal: ${branchName}`),
+        html.indexOf("RECIBO DE PAGO"),
+        html.indexOf(">ORIGINAL<"),
+      ];
+      const escPosHeader = [
+        escPos.indexOf("Empresa Demo"),
+        escPos.indexOf(`Sucursal: ${branchName}`),
+        escPos.indexOf("RECIBO DE PAGO"),
+        escPos.indexOf("*** ORIGINAL ***"),
+      ];
+
+      assert.ok(htmlHeader.every((index) => index >= 0));
+      assert.ok(escPosHeader.every((index) => index >= 0));
+      assert.deepEqual([...htmlHeader].sort((a, b) => a - b), htmlHeader);
+      assert.deepEqual([...escPosHeader].sort((a, b) => a - b), escPosHeader);
+      assert.match(
+        escPos,
+        new RegExp(`-{${paperWidth === "58" ? 32 : 48}}`),
+      );
+    }
+  }
 });
 
 test("imprime los tres QR juntos únicamente en el recibo original", () => {
@@ -213,5 +259,45 @@ test("guarda y recupera una impresora distinta por sucursal", () => {
   } finally {
     globalThis.window = previousWindow;
     globalThis.CustomEvent = previousCustomEvent;
+  }
+});
+
+test("envía ESC/POS sin pasar por el driver y conserva el encabezado en QZ", async () => {
+  const qzModule = await import("qz-tray");
+  const qz = qzModule.default || qzModule;
+  const previousWindow = globalThis.window;
+  const originals = {
+    isActive: qz.websocket.isActive,
+    create: qz.configs.create,
+    print: qz.print,
+  };
+  const jobs = [];
+  globalThis.window = { btoa: (data) => Buffer.from(data, "latin1").toString("base64") };
+  qz.websocket.isActive = () => true;
+  qz.configs.create = (printerName, options) => ({ printerName, options });
+  qz.print = async (config, data) => jobs.push({ config, data });
+
+  try {
+    for (const escPos of [true, false]) {
+      await printReceipt(sale, {
+        enabled: true,
+        mode: "qz",
+        printerName: "POS Printer",
+        escPos,
+      });
+    }
+    assert.equal(jobs[0].config.options.forceRaw, true);
+    assert.equal(jobs[0].data[0].type, "raw");
+    const raw = Buffer.from(jobs[0].data[0].data, "base64").toString("latin1");
+    assert.match(raw, /Empresa Demo\nSucursal: Sucursal Centro\n/);
+    assert.match(raw, /Recibo Nro: SC-000123/);
+    assert.equal((raw.match(/\x1D\x56\x00/g) || []).length, 2);
+    assert.equal(jobs[1].config.options.forceRaw, false);
+    assert.equal(jobs[1].data[0].type, "pixel");
+  } finally {
+    globalThis.window = previousWindow;
+    qz.websocket.isActive = originals.isActive;
+    qz.configs.create = originals.create;
+    qz.print = originals.print;
   }
 });

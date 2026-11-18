@@ -309,6 +309,15 @@ function normalizeReceipt(receipt = {}) {
   };
 }
 
+function receiptHeader(sale, copyLabel) {
+  return {
+    company: sale.companyName || sale.branchName,
+    branch: sale.companyName ? `Sucursal: ${sale.branchName}` : "",
+    documentTitle: "RECIBO DE PAGO",
+    copyLabel,
+  };
+}
+
 export function buildReceiptHtml(receipt, settingsValue = {}) {
   const settings = normalizeReceiptPrinterSettings(settingsValue);
   const sale = normalizeReceipt(receipt);
@@ -326,15 +335,17 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
         </tr>`,
     )
     .join("");
-  const receiptBody = (copyLabel, showQrLinks = false) => `
+  const receiptBody = (copyLabel, showQrLinks = false) => {
+    const header = receiptHeader(sale, copyLabel);
+    return `
     <section class="receipt">
       ${
         copyLabel === "COPIA"
           ? '<p class="copy-label compact-copy-label">COPIA</p>'
-          : `<h1>${escapeHtml(sale.companyName || sale.branchName)}</h1>
-      ${sale.companyName ? `<p class="center"><strong>Sucursal: ${escapeHtml(sale.branchName)}</strong></p>` : ""}
-      <p class="center">RECIBO DE PAGO</p>
-      <p class="copy-label">${escapeHtml(copyLabel)}</p>`
+          : `<h1>${escapeHtml(header.company)}</h1>
+      ${header.branch ? `<p class="center"><strong>${escapeHtml(header.branch)}</strong></p>` : ""}
+      <p class="center">${escapeHtml(header.documentTitle)}</p>
+      <p class="copy-label">${escapeHtml(header.copyLabel)}</p>`
       }
       <div class="rule"></div>
       <p><strong>Recibo N.º:</strong> ${escapeHtml(sale.receiptNumber)}</p>
@@ -361,6 +372,7 @@ export function buildReceiptHtml(receipt, settingsValue = {}) {
       ${copyLabel === "ORIGINAL" ? '<p class="footer"><strong>Este recibo no tiene valor legal.</strong></p>' : ""}
       ${copyLabel === "ORIGINAL" && settings.footer ? `<p class="footer">${escapeHtml(settings.footer)}</p>` : ""}
     </section>`;
+  };
 
   return `<!doctype html>
 <html lang="es">
@@ -527,19 +539,20 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
   const sale = normalizeReceipt(receipt);
   const columns = settings.paperWidth === "58" ? 32 : 48;
   const divider = "-".repeat(columns);
-  const copyLines = (copyLabel, leadingBlank = false, showQrLinks = false) => {
-    const lines = ["\x1B\x61\x01", ...(leadingBlank ? ["\n"] : [])];
+  const copyLines = (copyLabel, showQrLinks = false) => {
+    const header = receiptHeader(sale, copyLabel);
+    const lines = ["\x1B\x61\x01"];
     if (copyLabel === "COPIA") {
       lines.push("\x1B\x45\x01", "*** COPIA ***\n", "\x1B\x45\x00");
     } else {
       lines.push(
-        "RECIBO DE PAGO\n",
         "\x1B\x45\x01",
-        `${ascii(sale.companyName || sale.branchName)}\n`,
+        `${ascii(header.company)}\n`,
+        ...(header.branch ? [`${ascii(header.branch)}\n`] : []),
         "\x1B\x45\x00",
-        ...(sale.companyName ? [`Sucursal: ${ascii(sale.branchName)}\n`] : []),
+        `${ascii(header.documentTitle)}\n`,
         "\x1B\x45\x01",
-        `*** ${ascii(copyLabel)} ***\n`,
+        `*** ${ascii(header.copyLabel)} ***\n`,
         "\x1B\x45\x00",
       );
     }
@@ -611,7 +624,8 @@ export function buildEscPosReceipt(receipt, settingsValue = {}) {
 
   const lines = [
     "\x1B\x40",
-    ...copyLines("ORIGINAL", true, true),
+    "\x1B\x64\x01",
+    ...copyLines("ORIGINAL", true),
     ...(settings.cutPaper
       ? ["\n", "\x1B\x64\x05", "\x1D\x56\x00", "\x1B\x40", "\n"]
       : ["\n\n", "\x1B\x61\x01", `${divider}\n`, "\x1B\x61\x00", "\n"]),
@@ -731,6 +745,9 @@ export async function printReceipt(receipt, settingsValue) {
     jobName: `Recibo ${receipt?.receiptNumber || receipt?.saleNumber || "POS"}`,
     margins: 0,
     scaleContent: false,
+    // CUPS/PostScript drivers can alter ESC/POS bytes. QZ bypasses the driver
+    // with lpr -o raw on macOS/Linux; Windows already uses its raw path.
+    forceRaw: settings.escPos,
   });
 
   if (settings.escPos) {
